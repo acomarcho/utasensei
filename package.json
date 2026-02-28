@@ -22,5 +22,10 @@
     "@types/node": "^25.3.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@ai-sdk/fireworks": "^2.0.36",
+    "ai": "^6.0.105",
+    "dotenv": "^17.3.1"
   }
 }

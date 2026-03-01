@@ -11,7 +11,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "playwright": "tsx src/playwright.ts",
-    "translate": "tsx src/translate.ts"
+    "translate": "tsx src/translate.ts",
+    "translate-teach": "tsx src/translate-teach.ts"
   },
   "keywords": [],
   "author": "",

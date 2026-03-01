@@ -10,7 +10,8 @@ import { z } from "zod";
 (globalThis as { AI_SDK_LOG_WARNINGS?: boolean }).AI_SDK_LOG_WARNINGS = false;
 
 const MODEL_ID = "accounts/fireworks/models/glm-5";
-const USAGE = 'Usage: pnpm translate-teach -- "https://example.com/lyrics"';
+const USAGE =
+  'Usage: pnpm translate-teach -- "https://genius.com/artist-song-title-lyrics"';
 const CANDIDATE_SELECTORS = [
   "article",
   "main",
@@ -50,15 +51,26 @@ function parseUrlArg(argv: string[]): string {
     throw new Error(USAGE);
   }
 
+  let parsed: URL;
   try {
-    const parsed = new URL(urlArg);
-    if (!["http:", "https:"].includes(parsed.protocol)) {
-      throw new Error("Only http/https URLs are supported.");
-    }
-    return parsed.toString();
+    parsed = new URL(urlArg);
   } catch {
     throw new Error(`Invalid URL.\n${USAGE}`);
   }
+
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Only http/https URLs are supported.");
+  }
+
+  const isGeniusHost = /(^|\.)genius\.com$/i.test(parsed.hostname);
+  const looksLikeLyricsPath = /-lyrics$/i.test(parsed.pathname);
+  if (!isGeniusHost || !looksLikeLyricsPath) {
+    throw new Error(
+      "This currently only supports Genius lyrics URLs (https://genius.com/...-lyrics)."
+    );
+  }
+
+  return parsed.toString();
 }
 
 function normalizeText(raw: string): string {

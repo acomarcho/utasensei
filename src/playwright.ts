@@ -2,7 +2,8 @@
 
 import { chromium } from "playwright";
 
-const USAGE = 'Usage: pnpm playwright -- "https://example.com"';
+const USAGE =
+  'Usage: pnpm playwright -- "https://genius.com/artist-song-title-lyrics"';
 const CANDIDATE_SELECTORS = [
   "article",
   "main",
@@ -35,15 +36,26 @@ function parseUrlArg(argv: string[]): string {
     throw new Error(USAGE);
   }
 
+  let parsed: URL;
   try {
-    const parsed = new URL(urlArg);
-    if (!["http:", "https:"].includes(parsed.protocol)) {
-      throw new Error("Only http/https URLs are supported.");
-    }
-    return parsed.toString();
+    parsed = new URL(urlArg);
   } catch {
     throw new Error(`Invalid URL.\n${USAGE}`);
   }
+
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Only http/https URLs are supported.");
+  }
+
+  const isGeniusHost = /(^|\.)genius\.com$/i.test(parsed.hostname);
+  const looksLikeLyricsPath = /-lyrics$/i.test(parsed.pathname);
+  if (!isGeniusHost || !looksLikeLyricsPath) {
+    throw new Error(
+      "This currently only supports Genius lyrics URLs (https://genius.com/...-lyrics)."
+    );
+  }
+
+  return parsed.toString();
 }
 
 async function extractCleanSnapshot(url: string): Promise<string> {

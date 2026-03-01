@@ -1,6 +1,3 @@
-#!/usr/bin/env node
-
-import "dotenv/config";
 import { fireworks } from "@ai-sdk/fireworks";
 import { stepCountIs, ToolLoopAgent, tool } from "ai";
 import { z } from "zod";
@@ -8,13 +5,12 @@ import {
   cleanHtmlTreeToYaml,
   collectOrderedTextSegments,
   extractCleanHtmlTree
-} from "./lib/clean-html";
+} from "../lib/clean-html";
 
 // Keep CLI stdout clean JSON for piping/parsing.
 (globalThis as { AI_SDK_LOG_WARNINGS?: boolean }).AI_SDK_LOG_WARNINGS = false;
 
 const MODEL_ID = "accounts/fireworks/models/glm-5";
-const USAGE = 'Usage: pnpm translate-teach-generic -- "https://example.com/page"';
 const CLEAN_YAML_PROMPT_CHAR_LIMIT = 120_000;
 const TEXT_SEGMENT_LIMIT = 1_200;
 
@@ -50,27 +46,6 @@ type TeachState = {
   vocabularyExplanations: ExplanationLine[];
 };
 
-function parseUrlArg(argv: string[]): string {
-  const args = argv.slice(2).filter((arg) => arg.trim().length > 0);
-  const urlArg = (args[0] === "--" ? args[1] : args[0])?.trim();
-  if (!urlArg) {
-    throw new Error(USAGE);
-  }
-
-  let parsed: URL;
-  try {
-    parsed = new URL(urlArg);
-  } catch {
-    throw new Error(`Invalid URL.\n${USAGE}`);
-  }
-
-  if (!["http:", "https:"].includes(parsed.protocol)) {
-    throw new Error("Only http/https URLs are supported.");
-  }
-
-  return parsed.toString();
-}
-
 function normalizeLine(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
@@ -105,12 +80,9 @@ function truncateForPrompt(text: string, maxChars: number): string {
   return `${text.slice(0, maxChars)}\n# [truncated due to size]`;
 }
 
-async function main(): Promise<void> {
-  const url = parseUrlArg(process.argv);
-
+export async function runTranslateSong(url: string): Promise<void> {
   if (!process.env.FIREWORKS_API_KEY) {
-    console.error("Missing FIREWORKS_API_KEY. Add it to .env (see .env.example).");
-    process.exit(1);
+    throw new Error("Missing FIREWORKS_API_KEY. Add it to .env (see .env.example).");
   }
 
   const cleanTree = await extractCleanHtmlTree(url, {
@@ -367,9 +339,3 @@ async function main(): Promise<void> {
 
   process.stdout.write(`${JSON.stringify(state, null, 2)}\n`);
 }
-
-main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`Translate-teach-generic failed: ${message}`);
-  process.exit(1);
-});

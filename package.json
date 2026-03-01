@@ -7,14 +7,9 @@
     "utasensei": "dist/index.js"
   },
   "scripts": {
-    "dev": "tsx src/index.ts",
+    "cli": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
-    "playwright": "tsx src/playwright.ts",
-    "translate": "tsx src/translate.ts",
-    "translate-teach": "tsx src/translate-teach.ts",
-    "clean-html-extract": "tsx src/clean-html-extract.ts",
-    "translate-teach-generic": "tsx src/translate-teach-generic.ts"
+    "start": "node dist/index.js"
   },
   "keywords": [],
   "author": "",

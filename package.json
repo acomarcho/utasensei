@@ -12,7 +12,8 @@
     "start": "node dist/index.js",
     "playwright": "tsx src/playwright.ts",
     "translate": "tsx src/translate.ts",
-    "translate-teach": "tsx src/translate-teach.ts"
+    "translate-teach": "tsx src/translate-teach.ts",
+    "clean-html-extract": "tsx src/clean-html-extract.ts"
   },
   "keywords": [],
   "author": "",

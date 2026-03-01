@@ -37,9 +37,16 @@ const explanationSchema = z.object({
   vocabularies: z.array(vocabularySchema)
 });
 
+const songMetadataSchema = z.object({
+  title: z.string(),
+  artist: z.string()
+});
+
+type SongMetadata = z.infer<typeof songMetadataSchema>;
 type TranslationLine = z.infer<typeof translationLineSchema> & { id: number };
 type ExplanationLine = z.infer<typeof explanationSchema>;
 type TeachState = {
+  songMetadata: SongMetadata | null;
   translations: TranslationLine[];
   vocabularyExplanations: ExplanationLine[];
 };
@@ -121,7 +128,32 @@ function toLyricLines(text: string): string[] {
     .filter((line) => !/^ロクデナシ.*lyrics$/i.test(line));
 }
 
-async function extractLyricsText(url: string): Promise<string> {
+function parseSongMetadataFromCombinedTitle(value: string): SongMetadata | null {
+  const cleaned = value.replace(/\s*\|\s*Genius Lyrics\s*$/i, "").trim();
+  if (!cleaned) {
+    return null;
+  }
+
+  for (const separator of [" – ", " — ", " - "]) {
+    const index = cleaned.indexOf(separator);
+    if (index > 0 && index < cleaned.length - separator.length) {
+      const title = cleaned.slice(0, index).trim();
+      const artist = cleaned.slice(index + separator.length).trim();
+      if (title && artist) {
+        return { title, artist };
+      }
+    }
+  }
+
+  return null;
+}
+
+type PageExtractionResult = {
+  lyricsText: string;
+  songMetadata: SongMetadata | null;
+};
+
+async function extractGeniusPageData(url: string): Promise<PageExtractionResult> {
   const browser = await chromium.launch({
     headless: true,
     args: ["--disable-blink-features=AutomationControlled"]
@@ -156,31 +188,140 @@ async function extractLyricsText(url: string): Promise<string> {
       await page.waitForTimeout(1_000);
     }
 
-    const rawText = await page.evaluate((selectors) => {
+    const pageData = await page.evaluate((selectors) => {
+      const jsonLdScripts = Array.from(
+        document.querySelectorAll("script[type='application/ld+json']")
+      );
+
+      let jsonLdTitle = "";
+      let jsonLdArtist = "";
+
+      for (const script of jsonLdScripts) {
+        const raw = script.textContent?.trim();
+        if (!raw) {
+          continue;
+        }
+
+        try {
+          const parsed = JSON.parse(raw);
+          const queue = Array.isArray(parsed) ? [...parsed] : [parsed];
+
+          while (queue.length > 0) {
+            const item = queue.shift();
+            if (item == null || typeof item !== "object") {
+              continue;
+            }
+
+            if (Array.isArray(item)) {
+              queue.push(...item);
+              continue;
+            }
+
+            const record = item as Record<string, unknown>;
+            const typeValue = record["@type"];
+            const types = Array.isArray(typeValue)
+              ? typeValue
+              : typeof typeValue === "string"
+                ? [typeValue]
+                : [];
+
+            const looksLikeSong = types.some((typeName) =>
+              /musicrecording|song/i.test(typeName)
+            );
+
+            const name =
+              typeof record.name === "string" ? record.name.trim() : "";
+
+            let byArtistName = "";
+            const byArtist = record.byArtist;
+            if (typeof byArtist === "string") {
+              byArtistName = byArtist.trim();
+            } else if (Array.isArray(byArtist)) {
+              const first = byArtist.find(
+                (value) =>
+                  value != null &&
+                  typeof value === "object" &&
+                  typeof (value as Record<string, unknown>).name === "string"
+              ) as Record<string, unknown> | undefined;
+              byArtistName =
+                typeof first?.name === "string" ? first.name.trim() : "";
+            } else if (byArtist != null && typeof byArtist === "object") {
+              byArtistName =
+                typeof (byArtist as Record<string, unknown>).name === "string"
+                  ? ((byArtist as Record<string, unknown>).name as string).trim()
+                  : "";
+            }
+
+            if (looksLikeSong && name && byArtistName) {
+              jsonLdTitle = name;
+              jsonLdArtist = byArtistName;
+              break;
+            }
+
+            for (const nestedValue of Object.values(record)) {
+              if (nestedValue != null && typeof nestedValue === "object") {
+                queue.push(nestedValue);
+              }
+            }
+          }
+        } catch {
+          // Ignore malformed JSON-LD blocks.
+        }
+
+        if (jsonLdTitle && jsonLdArtist) {
+          break;
+        }
+      }
+
       const geniusLyrics = Array.from(
         document.querySelectorAll("[data-lyrics-container='true']")
       ) as HTMLElement[];
 
-      if (geniusLyrics.length > 0) {
-        return geniusLyrics.map((container) => container.innerText).join("\n");
-      }
+      const rawText =
+        geniusLyrics.length > 0
+          ? geniusLyrics.map((container) => container.innerText).join("\n")
+          : (() => {
+              const root =
+                selectors
+                  .map((selector) => document.querySelector(selector))
+                  .find((node) => node instanceof HTMLElement) ?? document.body;
 
-      const root =
-        selectors
-          .map((selector) => document.querySelector(selector))
-          .find((node) => node instanceof HTMLElement) ?? document.body;
+              const clone = root.cloneNode(true) as HTMLElement;
+              clone
+                .querySelectorAll(
+                  "script,style,noscript,svg,canvas,iframe,nav,footer,header,form,button,input,textarea,select"
+                )
+                .forEach((node) => node.remove());
 
-      const clone = root.cloneNode(true) as HTMLElement;
-      clone
-        .querySelectorAll(
-          "script,style,noscript,svg,canvas,iframe,nav,footer,header,form,button,input,textarea,select"
-        )
-        .forEach((node) => node.remove());
+              return (clone.innerText || clone.textContent || "").trim();
+            })();
 
-      return (clone.innerText || clone.textContent || "").trim();
+      const ogTitle =
+        document.querySelector("meta[property='og:title']")?.getAttribute("content")?.trim() ??
+        "";
+      const pageTitle = document.title?.trim() ?? "";
+
+      return { rawText, jsonLdTitle, jsonLdArtist, ogTitle, pageTitle };
     }, CANDIDATE_SELECTORS);
 
-    return cleanupLyricsText(rawText);
+    let songMetadata: SongMetadata | null = null;
+    if (pageData.jsonLdTitle && pageData.jsonLdArtist) {
+      songMetadata = {
+        title: pageData.jsonLdTitle,
+        artist: pageData.jsonLdArtist
+      };
+    }
+
+    if (!songMetadata) {
+      songMetadata =
+        parseSongMetadataFromCombinedTitle(pageData.pageTitle) ??
+        parseSongMetadataFromCombinedTitle(pageData.ogTitle);
+    }
+
+    return {
+      lyricsText: cleanupLyricsText(pageData.rawText),
+      songMetadata
+    };
   } finally {
     await browser.close();
   }
@@ -194,7 +335,8 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const lyricsText = await extractLyricsText(url);
+  const { lyricsText, songMetadata: extractedSongMetadata } =
+    await extractGeniusPageData(url);
   if (!lyricsText) {
     throw new Error("No lyric text found on the page.");
   }
@@ -205,19 +347,22 @@ async function main(): Promise<void> {
   }
 
   const state: TeachState = {
+    songMetadata: null,
     translations: [],
     vocabularyExplanations: []
   };
 
   const agent = new ToolLoopAgent({
     model: fireworks(MODEL_ID),
-    stopWhen: stepCountIs(8),
+    stopWhen: stepCountIs(10),
     instructions: [
       "You are a strict Japanese-learning content generator that MUST update state via tools.",
       "Use tool calls, not plain text, to produce the result.",
       "Hard requirements:",
-      "- Call set_translation_state first, exactly once.",
-      "- Call set_vocab_explanations_state second, exactly once.",
+      "- Call set_song_metadata_state first, exactly once.",
+      "- Call set_translation_state second, exactly once.",
+      "- Call set_vocab_explanations_state third, exactly once.",
+      "- Do not call set_translation_state before song metadata exists.",
       "- Do not call set_vocab_explanations_state before set_translation_state.",
       "- Every input line must be translated in order; do not skip lines.",
       "- For explanations: every translation line gets exactly one explanation entry.",
@@ -227,6 +372,19 @@ async function main(): Promise<void> {
       "- Keep original text unchanged in translations and vocab entries."
     ].join("\n"),
     tools: {
+      set_song_metadata_state: tool({
+        description:
+          "Set song metadata state (title + artist) extracted from the current Genius lyrics page.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          if (!extractedSongMetadata) {
+            return "Could not extract song metadata from this page.";
+          }
+
+          state.songMetadata = extractedSongMetadata;
+          return state;
+        }
+      }),
       set_translation_state: tool({
         description:
           "Set translation state from lyric lines. This resets vocabularyExplanations to empty.",
@@ -234,6 +392,10 @@ async function main(): Promise<void> {
           translations: z.array(translationLineSchema)
         }),
         execute: async ({ translations }) => {
+          if (!state.songMetadata) {
+            return "Please call set_song_metadata_state first before using this tool.";
+          }
+
           state.translations = translations.map((line, id) => ({ id, ...line }));
           state.vocabularyExplanations = [];
           return state;
@@ -285,9 +447,13 @@ async function main(): Promise<void> {
     prompt: [
       "Task: create line-by-line Japanese learning output via tool calls.",
       "You must call tools in this order:",
-      "1) set_translation_state",
-      "2) set_vocab_explanations_state",
+      "1) set_song_metadata_state",
+      "2) set_translation_state",
+      "3) set_vocab_explanations_state",
       "After both tools succeed, finish with a short confirmation text.",
+      "",
+      "Song metadata guidance:",
+      "- set_song_metadata_state should set the song title and artist from this Genius page.",
       "",
       "Translation quality requirements:",
       "- Natural English translation, concise and faithful.",
@@ -311,10 +477,17 @@ async function main(): Promise<void> {
       "- Good longFormExplanation: \"Nakanu is a literary/soft negative form related to nakanai (not cry). you ni means 'so that' or 'in order to'. As a chunk, nakanu you ni expresses purpose/prevention: doing something so crying does not happen.\"",
       "- Good vocabularies: [{\"original\":\"nakanu\",\"explanation\":\"negative form meaning 'not cry'\"},{\"original\":\"you ni\",\"explanation\":\"so that / in order to\"}]",
       "",
+      "Context: metadata candidates already extracted from this page:",
+      JSON.stringify(extractedSongMetadata),
+      "",
       "Input lyric lines JSON:",
       JSON.stringify(lyricLines)
     ].join("\n")
   });
+
+  if (!state.songMetadata) {
+    throw new Error("Agent did not set songMetadata state.");
+  }
 
   if (state.translations.length !== lyricLines.length) {
     throw new Error(

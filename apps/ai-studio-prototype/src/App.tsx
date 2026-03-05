@@ -214,7 +214,7 @@ function ReviewTopCard({
 						? { opacity: 0.1, rotate: -14, x: -360, y: 28 }
 						: { opacity: 1, rotate: 0, x: 0, y: 0 }
 			}
-			className="absolute inset-0 z-30"
+			className="absolute inset-x-1 inset-y-2 z-30 sm:inset-0"
 			initial={{ opacity: 0, scale: 0.95, y: -24 }}
 			transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
 		>
@@ -250,7 +250,7 @@ function ReviewPreviewCard({
 	depth: number;
 }) {
 	const parsedFace = parseCardFace(card.front);
-	const offsetY = depth * 14;
+	const offsetY = depth * 10;
 	const rotation = depth % 2 === 0 ? depth * -1.8 : depth * 1.5;
 	const scale = 1 - depth * 0.05;
 	const opacity = 1 - depth * 0.12;
@@ -258,7 +258,7 @@ function ReviewPreviewCard({
 	return (
 		<motion.div
 			animate={{ opacity, rotate: rotation, scale, x: 0, y: offsetY }}
-			className="absolute inset-0"
+			className="absolute inset-x-1 inset-y-2 sm:inset-0"
 			initial={false}
 			style={{ zIndex: 20 - depth }}
 			transition={{ bounce: 0.2, duration: 0.32, ease: "easeOut" }}
@@ -737,29 +737,14 @@ export default function App() {
 										</div>
 
 										<div className="flex w-full max-w-[320px] flex-col gap-3 md:items-end">
-											<div className="neo-card-no-hover w-full bg-[var(--bg-card-hover)] p-4 md:max-w-[300px]">
-												<p className="text-[11px] font-bold uppercase tracking-[0.22em] neo-text-muted">
-													Flashcard review
-												</p>
-												<div className="mt-3 flex items-end justify-between gap-4">
-													<div>
-														<p className="text-4xl font-bold tracking-[-0.05em]">
-															{FLASHCARD_RUN.count}
-														</p>
-														<p className="mt-1 text-[11px] font-bold uppercase tracking-[0.2em] neo-text-muted">
-															111 flashcards
-														</p>
-													</div>
-													<button
-														className="neo-button px-4 py-3 text-xs uppercase tracking-[0.18em]"
-														onClick={() => setIsReviewOpen(true)}
-														type="button"
-													>
-														Review deck
-													</button>
-												</div>
-											</div>
-											<div className="neo-border inline-block self-start bg-[var(--bg-accent)] px-4 py-2 text-sm font-bold uppercase text-[var(--text-on-accent)] md:self-auto">
+											<button
+												className="neo-button px-4 py-2 text-sm uppercase tracking-[0.16em]"
+												onClick={() => setIsReviewOpen(true)}
+												type="button"
+											>
+												Review {FLASHCARD_RUN.count} flashcards
+											</button>
+											<div className="neo-card-no-hover px-4 py-2 text-sm font-bold uppercase neo-text-muted md:self-auto">
 												Source: Genius
 											</div>
 										</div>

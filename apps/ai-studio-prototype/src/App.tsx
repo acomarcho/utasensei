@@ -1,4 +1,9 @@
-import { AnimatePresence, motion } from "motion/react";
+import {
+	AnimatePresence,
+	motion,
+	useMotionValue,
+	useTransform,
+} from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import {
 	ArrowRight,
@@ -17,6 +22,7 @@ import { MOCK_DATA } from "./data";
 
 const REVIEW_STACK_LIMIT = 5;
 const REVIEW_SWIPE_MS = 280;
+const REVIEW_DRAG_THRESHOLD = 110;
 
 type ReviewAction = "forgotten" | "remembered";
 
@@ -271,20 +277,121 @@ function ReviewTopCard({
 	onForget: () => void;
 	onRemember: () => void;
 }) {
+	const [dragIntent, setDragIntent] = useState<ReviewAction | "return" | null>(
+		null,
+	);
+	const dragX = useMotionValue(0);
+	const dragRotate = useTransform(dragX, [-220, 0, 220], [-10, 0, 10]);
+	const leftGlowOpacity = useTransform(
+		dragX,
+		[-REVIEW_DRAG_THRESHOLD, -24, 0],
+		[0.22, 0.08, 0],
+	);
+	const rightGlowOpacity = useTransform(
+		dragX,
+		[0, 24, REVIEW_DRAG_THRESHOLD],
+		[0, 0.08, 0.22],
+	);
+
+	const handleDrag = (
+		_event: MouseEvent | TouchEvent | PointerEvent,
+		info: { offset: { x: number } },
+	) => {
+		const offsetX = info.offset.x;
+
+		if (offsetX >= REVIEW_DRAG_THRESHOLD) {
+			setDragIntent("remembered");
+			return;
+		}
+
+		if (offsetX <= -REVIEW_DRAG_THRESHOLD) {
+			setDragIntent("forgotten");
+			return;
+		}
+
+		if (Math.abs(offsetX) > 20) {
+			setDragIntent("return");
+			return;
+		}
+
+		setDragIntent(null);
+	};
+
+	const handleDragEnd = (
+		_event: MouseEvent | TouchEvent | PointerEvent,
+		info: { offset: { x: number } },
+	) => {
+		if (swipeDirection) {
+			return;
+		}
+
+		if (info.offset.x >= REVIEW_DRAG_THRESHOLD) {
+			setDragIntent(null);
+			onRemember();
+			return;
+		}
+
+		if (info.offset.x <= -REVIEW_DRAG_THRESHOLD) {
+			setDragIntent(null);
+			onForget();
+			return;
+		}
+
+		setDragIntent(null);
+	};
+
+	const dragHintLabel =
+		dragIntent === "remembered"
+			? "Release to mark known"
+			: dragIntent === "forgotten"
+				? "Release for again"
+				: dragIntent === "return"
+					? "Release to return"
+					: null;
+
 	return (
 		<motion.div
 			animate={
 				swipeDirection === "remembered"
-					? { opacity: 0.1, rotate: 14, x: 360, y: 28 }
+					? { opacity: 0.1, x: 360, y: 28 }
 					: swipeDirection === "forgotten"
-						? { opacity: 0.1, rotate: -14, x: -360, y: 28 }
-						: { opacity: 1, rotate: 0, x: 0, y: 0 }
+						? { opacity: 0.1, x: -360, y: 28 }
+						: { opacity: 1, x: 0, y: 0 }
 			}
 			className="absolute inset-x-1 inset-y-2 z-30 sm:inset-0"
+			drag={swipeDirection ? false : "x"}
+			dragConstraints={{ left: 0, right: 0 }}
+			dragElastic={0.18}
+			dragMomentum={false}
 			initial={{ opacity: 0, scale: 0.95, y: -24 }}
+			onDrag={handleDrag}
+			onDragEnd={handleDragEnd}
+			style={{ rotate: dragRotate, x: dragX }}
 			transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
 		>
-			<div className="flashcard-shell h-full w-full">
+			<motion.div
+				className="pointer-events-none absolute inset-0 rounded-[2px] bg-[linear-gradient(90deg,rgba(0,0,0,0.12),transparent_45%)]"
+				style={{ opacity: leftGlowOpacity }}
+			/>
+			<motion.div
+				className="pointer-events-none absolute inset-0 rounded-[2px] bg-[linear-gradient(270deg,rgba(255,140,0,0.18),transparent_45%)]"
+				style={{ opacity: rightGlowOpacity }}
+			/>
+			<AnimatePresence>
+				{dragHintLabel && !swipeDirection && (
+					<motion.div
+						animate={{ opacity: 1, y: 0 }}
+						className="pointer-events-none absolute left-1/2 top-3 z-40 -translate-x-1/2"
+						exit={{ opacity: 0, y: -6 }}
+						initial={{ opacity: 0, y: -8 }}
+					>
+						<div className="neo-card-no-hover px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] neo-text-muted">
+							{dragHintLabel}
+						</div>
+					</motion.div>
+				)}
+			</AnimatePresence>
+			<div className="flashcard-shell flashcard-draggable h-full w-full">
 				<div
 					className={`flashcard-inner h-full w-full ${isFlipped ? "is-flipped" : ""}`}
 				>
@@ -332,7 +439,7 @@ function ReviewPreviewCard({
 			<div className="neo-card-no-hover flex h-full w-full min-w-0 flex-col justify-between overflow-hidden bg-[var(--bg-card)] px-4 py-4 sm:px-5 sm:py-5">
 				<div className="flex items-center justify-between gap-3">
 					<span className="text-[10px] font-bold uppercase tracking-[0.18em] neo-text-muted sm:text-[11px]">
-						Leftd
+						Queued
 					</span>
 					<span className="text-[10px] font-bold uppercase tracking-[0.18em] neo-text-muted sm:text-[11px]">
 						#{card.id}

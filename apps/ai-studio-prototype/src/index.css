@@ -171,3 +171,13 @@ button.neo-button:not(:disabled):hover {
   transform: translate(-2px, -2px);
   box-shadow: calc(var(--shadow-offset) + 2px) calc(var(--shadow-offset) + 2px) 0px 0px var(--shadow-color);
 }
+
+
+.flashcard-draggable {
+  cursor: grab;
+  touch-action: pan-y;
+}
+
+.flashcard-draggable:active {
+  cursor: grabbing;
+}

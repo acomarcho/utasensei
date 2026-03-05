@@ -93,3 +93,60 @@
   color: var(--text-muted);
 }
 
+
+.neo-review-backdrop {
+  background: rgb(244 241 234 / 0.58);
+  backdrop-filter: blur(14px);
+}
+
+.neo-noise {
+  background-image: radial-gradient(circle at 1px 1px, rgb(0 0 0 / 0.08) 1px, transparent 0);
+  background-size: 16px 16px;
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.flashcard-scene {
+  perspective: 1800px;
+}
+
+.flashcard-shell {
+  position: relative;
+  z-index: 30;
+  isolation: isolate;
+  transform-style: preserve-3d;
+}
+
+.flashcard-inner {
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.62s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.flashcard-inner.is-flipped {
+  transform: rotateY(180deg);
+}
+
+.flashcard-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translateZ(1px);
+}
+
+.flashcard-face-back {
+  z-index: 2;
+  transform: rotateY(180deg) translateZ(1px);
+}
+
+
+.neo-wrap-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+.neo-stat-chip {
+  min-width: 0;
+}

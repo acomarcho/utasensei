@@ -1,11 +1,8 @@
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { db } from "../db/client";
 import {
-  lyricLines,
   songs,
-  translationLines,
-  translationRuns,
-  vocabEntries
+  translationRuns
 } from "../db/schema";
 
 type SongSummary = {
@@ -78,76 +75,39 @@ async function getSongDetails(songId: number): Promise<void> {
     throw new Error(`No translation runs found for song id ${songId}.`);
   }
 
-  const lyricRows = await db
-    .select({
-      id: lyricLines.id,
-      lineIndex: lyricLines.lineIndex,
-      originalText: lyricLines.originalText
-    })
-    .from(lyricLines)
-    .where(eq(lyricLines.runId, run.id))
-    .orderBy(lyricLines.lineIndex);
+  const runWithLines = await db.query.translationRuns.findFirst({
+    where: eq(translationRuns.id, run.id),
+    with: {
+      lyricLines: {
+        orderBy: (fields, operators) => operators.asc(fields.lineIndex),
+        with: {
+          translationLine: {
+            with: {
+              vocabEntries: {
+                orderBy: (fields, operators) => operators.asc(fields.vocabIndex)
+              }
+            }
+          }
+        }
+      }
+    }
+  });
 
-  const lyricIds = lyricRows.map((row) => row.id);
-  const translationRows =
-    lyricIds.length === 0
-      ? []
-      : await db
-          .select({
-            id: translationLines.id,
-            lyricLineId: translationLines.lyricLineId,
-            translationText: translationLines.translationText,
-            longFormExplanation: translationLines.longFormExplanation
-          })
-          .from(translationLines)
-          .where(inArray(translationLines.lyricLineId, lyricIds));
-
-  const translationIds = translationRows.map((row) => row.id);
-  const vocabRows =
-    translationIds.length === 0
-      ? []
-      : await db
-          .select({
-            translationLineId: vocabEntries.translationLineId,
-            vocabIndex: vocabEntries.vocabIndex,
-            originalText: vocabEntries.originalText,
-            explanation: vocabEntries.explanation
-          })
-          .from(vocabEntries)
-          .where(inArray(vocabEntries.translationLineId, translationIds))
-          .orderBy(vocabEntries.translationLineId, vocabEntries.vocabIndex);
-
-  const translationByLyricId = new Map(
-    translationRows.map((row) => [row.lyricLineId, row])
-  );
-  const vocabByTranslationId = new Map<number, Array<{ originalText: string; explanation: string }>>();
-
-  for (const row of vocabRows) {
-    const list = vocabByTranslationId.get(row.translationLineId) ?? [];
-    list.push({ originalText: row.originalText, explanation: row.explanation });
-    vocabByTranslationId.set(row.translationLineId, list);
+  if (!runWithLines) {
+    throw new Error(`Failed to load translation run ${run.id}.`);
   }
 
-  const lines = lyricRows.map((line) => {
-    const translation = translationByLyricId.get(line.id);
-    if (!translation) {
-      return {
-        lineIndex: line.lineIndex,
-        originalText: line.originalText,
-        translationText: "",
-        longFormExplanation: "",
-        vocabularies: []
-      };
-    }
-
-    return {
-      lineIndex: line.lineIndex,
-      originalText: line.originalText,
-      translationText: translation.translationText,
-      longFormExplanation: translation.longFormExplanation,
-      vocabularies: vocabByTranslationId.get(translation.id) ?? []
-    };
-  });
+  const lines = runWithLines.lyricLines.map((line) => ({
+    lineIndex: line.lineIndex,
+    originalText: line.originalText,
+    translationText: line.translationLine?.translationText ?? "",
+    longFormExplanation: line.translationLine?.longFormExplanation ?? "",
+    vocabularies:
+      line.translationLine?.vocabEntries.map((entry) => ({
+        originalText: entry.originalText,
+        explanation: entry.explanation
+      })) ?? []
+  }));
 
   const payload: SongDetails = {
     song,

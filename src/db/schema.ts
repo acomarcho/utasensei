@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   int,
   integer,
@@ -14,6 +14,10 @@ export const songs = sqliteTable("songs", {
   createdAt: integer().notNull().default(sql`(unixepoch())`)
 });
 
+export const songsRelations = relations(songs, ({ many }) => ({
+  translationRuns: many(translationRuns)
+}));
+
 export const translationRuns = sqliteTable("translation_runs", {
   id: int().primaryKey({ autoIncrement: true }),
   songId: int().notNull().references(() => songs.id),
@@ -21,6 +25,17 @@ export const translationRuns = sqliteTable("translation_runs", {
   modelId: text().notNull(),
   createdAt: integer().notNull().default(sql`(unixepoch())`)
 });
+
+export const translationRunsRelations = relations(
+  translationRuns,
+  ({ one, many }) => ({
+    song: one(songs, {
+      fields: [translationRuns.songId],
+      references: [songs.id]
+    }),
+    lyricLines: many(lyricLines)
+  })
+);
 
 export const lyricLines = sqliteTable(
   "lyric_lines",
@@ -35,6 +50,17 @@ export const lyricLines = sqliteTable(
   ]
 );
 
+export const lyricLinesRelations = relations(lyricLines, ({ one }) => ({
+  run: one(translationRuns, {
+    fields: [lyricLines.runId],
+    references: [translationRuns.id]
+  }),
+  translationLine: one(translationLines, {
+    fields: [lyricLines.id],
+    references: [translationLines.lyricLineId]
+  })
+}));
+
 export const translationLines = sqliteTable(
   "translation_lines",
   {
@@ -46,6 +72,17 @@ export const translationLines = sqliteTable(
   (table) => [
     uniqueIndex("translation_lines_lyric_line").on(table.lyricLineId)
   ]
+);
+
+export const translationLinesRelations = relations(
+  translationLines,
+  ({ one, many }) => ({
+    lyricLine: one(lyricLines, {
+      fields: [translationLines.lyricLineId],
+      references: [lyricLines.id]
+    }),
+    vocabEntries: many(vocabEntries)
+  })
 );
 
 export const vocabEntries = sqliteTable(
@@ -64,3 +101,10 @@ export const vocabEntries = sqliteTable(
     )
   ]
 );
+
+export const vocabEntriesRelations = relations(vocabEntries, ({ one }) => ({
+  translationLine: one(translationLines, {
+    fields: [vocabEntries.translationLineId],
+    references: [translationLines.id]
+  })
+}));

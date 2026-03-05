@@ -887,7 +887,7 @@ export default function App() {
 
 										<div className="flex w-full max-w-[320px] flex-col gap-3 md:items-end">
 											<button
-												className="neo-button px-4 py-2 text-sm uppercase tracking-[0.16em]"
+												className="neo-button px-4 py-2 text-left text-sm uppercase tracking-[0.16em] md:text-center"
 												onClick={() => setIsReviewOpen(true)}
 												type="button"
 											>

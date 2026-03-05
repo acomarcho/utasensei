@@ -6,6 +6,14 @@ import {
   collectOrderedTextSegments,
   extractCleanHtmlTree
 } from "../lib/clean-html";
+import { db } from "../db/client";
+import {
+  lyricLines,
+  songs,
+  translationLines,
+  translationRuns,
+  vocabEntries
+} from "../db/schema";
 
 // Keep CLI stdout clean JSON for piping/parsing.
 (globalThis as { AI_SDK_LOG_WARNINGS?: boolean }).AI_SDK_LOG_WARNINGS = false;
@@ -44,6 +52,8 @@ type TeachState = {
   lyricsLines: string[];
   translations: TranslationLine[];
   vocabularyExplanations: ExplanationLine[];
+  dbRunId?: number;
+  dbSongId?: number;
 };
 
 function normalizeLine(text: string): string {
@@ -336,6 +346,124 @@ export async function runTranslateSong(url: string): Promise<void> {
       `Agent did not set full vocabulary explanations state. Expected ${state.lyricsLines.length}, got ${state.vocabularyExplanations.length}.`
     );
   }
+
+  const songMetadata = state.songMetadata;
+  if (!songMetadata) {
+    throw new Error("Song metadata missing after agent run.");
+  }
+
+  const saved = await db.transaction(async (tx) => {
+    const [song] = await tx
+      .insert(songs)
+      .values({
+        title: songMetadata.title,
+        artist: songMetadata.artist
+      })
+      .returning({ id: songs.id });
+
+    if (!song) {
+      throw new Error("Failed to insert song row.");
+    }
+
+    const [run] = await tx
+      .insert(translationRuns)
+      .values({
+        songId: song.id,
+        sourceUrl: cleanTree.url,
+        modelId: MODEL_ID
+      })
+      .returning({ id: translationRuns.id });
+
+    if (!run) {
+      throw new Error("Failed to insert translation run row.");
+    }
+
+    const lineRows = state.lyricsLines.map((line, index) => ({
+      runId: run.id,
+      lineIndex: index,
+      originalText: line
+    }));
+
+    const insertedLines = await tx
+      .insert(lyricLines)
+      .values(lineRows)
+      .returning({ id: lyricLines.id, lineIndex: lyricLines.lineIndex });
+
+    if (insertedLines.length !== state.lyricsLines.length) {
+      throw new Error("Failed to insert all lyric lines.");
+    }
+
+    const lyricLineIdByIndex = new Map(
+      insertedLines.map((row) => [row.lineIndex, row.id])
+    );
+
+    const translationRows = state.translations.map((line) => {
+      const lyricLineId = lyricLineIdByIndex.get(line.id);
+      if (!lyricLineId) {
+        throw new Error(`Missing lyric line row for index ${line.id}.`);
+      }
+
+      return {
+        lyricLineId,
+        translationText: line.translation,
+        longFormExplanation:
+          state.vocabularyExplanations[line.id]?.longFormExplanation ?? ""
+      };
+    });
+
+    const insertedTranslations = await tx
+      .insert(translationLines)
+      .values(translationRows)
+      .returning({
+        id: translationLines.id,
+        lyricLineId: translationLines.lyricLineId
+      });
+
+    if (insertedTranslations.length !== state.translations.length) {
+      throw new Error("Failed to insert all translation lines.");
+    }
+
+    const translationIdByLyricLineId = new Map(
+      insertedTranslations.map((row) => [row.lyricLineId, row.id])
+    );
+
+    const vocabRows = state.vocabularyExplanations.flatMap((entry) => {
+      const lyricLineId = lyricLineIdByIndex.get(entry.translationId);
+      if (!lyricLineId) {
+        throw new Error(`Missing lyric line row for index ${entry.translationId}.`);
+      }
+
+      const translationLineId = translationIdByLyricLineId.get(lyricLineId);
+      if (!translationLineId) {
+        throw new Error(
+          `Missing translation line row for lyric line ${entry.translationId}.`
+        );
+      }
+
+      return entry.vocabularies.map((vocab, vocabIndex) => ({
+        translationLineId,
+        vocabIndex,
+        originalText: vocab.original,
+        explanation: vocab.explanation
+      }));
+    });
+
+    if (vocabRows.length > 0) {
+      const insertedVocab = await tx
+        .insert(vocabEntries)
+        .values(vocabRows)
+        .returning({ id: vocabEntries.id });
+
+      if (insertedVocab.length !== vocabRows.length) {
+        throw new Error("Failed to insert all vocabulary entries.");
+      }
+    }
+
+    return { songId: song.id, runId: run.id };
+  });
+
+  state.dbSongId = saved.songId;
+  state.dbRunId = saved.runId;
 
   process.stdout.write(`${JSON.stringify(state, null, 2)}\n`);
 }

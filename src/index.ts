@@ -2,19 +2,27 @@
 
 import "dotenv/config";
 import { runExtractHtml } from "./commands/extract-html";
+import { runSongs } from "./commands/songs";
 import { runTranslateSong } from "./commands/translate-song";
 
 const HELP_TEXT = [
   "Usage:",
   "  pnpm cli extract-html <url>",
   "  pnpm cli translate-song <url>",
+  "  pnpm cli songs [id]",
   "",
   "Examples:",
   "  pnpm cli extract-html https://genius.com/Genius-romanizations-rokudenashi-one-voice-romanized-lyrics",
-  "  pnpm cli translate-song https://www.lyrical-nonsense.com/global/lyrics/sayuri/hana-no-tou/"
+  "  pnpm cli translate-song https://www.lyrical-nonsense.com/global/lyrics/sayuri/hana-no-tou/",
+  "  pnpm cli songs",
+  "  pnpm cli songs 1"
 ].join("\n");
 
-function parseCliArgs(argv: string[]): { command: string; url: string } {
+type CliArgs =
+  | { command: "extract-html" | "translate-song"; url: string }
+  | { command: "songs"; id?: number };
+
+function parseCliArgs(argv: string[]): CliArgs {
   const rawArgs = argv.slice(2).filter((arg) => arg.trim().length > 0);
   const args = rawArgs[0] === "--" ? rawArgs.slice(1) : rawArgs;
 
@@ -23,8 +31,22 @@ function parseCliArgs(argv: string[]): { command: string; url: string } {
   }
 
   const command = args[0];
-  const urlArg = args[1];
 
+  if (command === "songs") {
+    const idArg = args[1];
+    if (!idArg) {
+      return { command: "songs" };
+    }
+
+    const parsedId = Number(idArg);
+    if (!Number.isInteger(parsedId) || parsedId <= 0) {
+      throw new Error(`Invalid song id "${idArg}".\n\n${HELP_TEXT}`);
+    }
+
+    return { command: "songs", id: parsedId };
+  }
+
+  const urlArg = args[1];
   if (!urlArg) {
     throw new Error(`Missing URL.\n\n${HELP_TEXT}`);
   }
@@ -40,22 +62,31 @@ function parseCliArgs(argv: string[]): { command: string; url: string } {
     throw new Error("Only http/https URLs are supported.");
   }
 
-  return { command, url: parsed.toString() };
+  if (command === "extract-html" || command === "translate-song") {
+    return { command, url: parsed.toString() };
+  }
+
+  throw new Error(`Unknown command "${command}".\n\n${HELP_TEXT}`);
 }
 
 async function main(): Promise<void> {
   try {
-    const { command, url } = parseCliArgs(process.argv);
+    const parsed = parseCliArgs(process.argv);
 
-    switch (command) {
+    switch (parsed.command) {
       case "extract-html":
-        await runExtractHtml(url);
+        await runExtractHtml(parsed.url);
         return;
       case "translate-song":
-        await runTranslateSong(url);
+        await runTranslateSong(parsed.url);
         return;
-      default:
-        throw new Error(`Unknown command "${command}".\n\n${HELP_TEXT}`);
+      case "songs":
+        await runSongs(parsed.id);
+        return;
+      default: {
+        const exhaustiveCheck: never = parsed;
+        throw new Error(`Unknown command "${exhaustiveCheck}".\n\n${HELP_TEXT}`);
+      }
     }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

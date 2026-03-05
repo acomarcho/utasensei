@@ -150,3 +150,24 @@
 .neo-stat-chip {
   min-width: 0;
 }
+
+
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+button.neo-card-no-hover:not(:disabled):hover,
+button.neo-card:not(:disabled):hover {
+  background-color: var(--bg-card-hover);
+  transform: translate(-2px, -2px);
+  box-shadow: calc(var(--shadow-offset) + 1px) calc(var(--shadow-offset) + 1px) 0px 0px var(--shadow-color);
+}
+
+button.neo-button:not(:disabled):hover {
+  transform: translate(-2px, -2px);
+  box-shadow: calc(var(--shadow-offset) + 2px) calc(var(--shadow-offset) + 2px) 0px 0px var(--shadow-color);
+}

@@ -5,7 +5,6 @@ import {
 	BookOpen,
 	Check,
 	ChevronDown,
-	ChevronUp,
 	Menu,
 	Music,
 	Play,
@@ -80,6 +79,73 @@ function parseCardFace(raw: string): ParsedCardFace {
 }
 
 const FLASHCARD_RUN = buildMockFlashcardRun();
+
+function SidebarContent({
+	onClose,
+	onNewSong,
+	onSelectSong,
+	selectedSongId,
+	songsList,
+}: {
+	onClose: () => void;
+	onNewSong: () => void;
+	onSelectSong: (songId: number) => void;
+	selectedSongId: number | null;
+	songsList: { id: number; title: string; artist: string }[];
+}) {
+	return (
+		<>
+			<div className="neo-border-b flex items-center justify-between p-6">
+				<h1 className="flex items-center gap-2 text-2xl font-bold tracking-tighter uppercase">
+					<Music className="h-6 w-6" />
+					UtaSensei
+				</h1>
+				<button className="md:hidden" onClick={onClose} type="button">
+					<X className="h-6 w-6" />
+				</button>
+			</div>
+
+			<div className="flex-1 overflow-y-auto p-4">
+				<h2 className="mb-4 text-sm font-bold tracking-widest uppercase neo-text-muted">
+					Your Library
+				</h2>
+				<div className="space-y-3">
+					{songsList.map((song) => (
+						<button
+							className={`w-full p-3 text-left ${
+								selectedSongId === song.id
+									? "neo-card"
+									: "neo-card-no-hover opacity-80 hover:opacity-100"
+							} flex items-center gap-3`}
+							key={song.id}
+							onClick={() => onSelectSong(song.id)}
+							type="button"
+						>
+							<div className="neo-border flex h-10 w-10 shrink-0 items-center justify-center bg-[var(--bg-accent)]">
+								<Play className="ml-1 h-5 w-5 text-[var(--text-on-accent)]" />
+							</div>
+							<div className="overflow-hidden">
+								<p className="truncate font-bold">{song.title}</p>
+								<p className="truncate text-xs neo-text-muted">{song.artist}</p>
+							</div>
+						</button>
+					))}
+				</div>
+			</div>
+
+			<div className="neo-border-t p-4">
+				<button
+					className="neo-button flex w-full items-center justify-center gap-2 py-3"
+					onClick={onNewSong}
+					type="button"
+				>
+					<Search className="h-5 w-5" />
+					New Song
+				</button>
+			</div>
+		</>
+	);
+}
 
 function ReviewDecisionBar({
 	disabled,
@@ -597,82 +663,58 @@ export default function App() {
 	return (
 		<>
 			<div className="neo-app flex h-screen overflow-hidden font-sans">
-				{isSidebarOpen && (
-					<button
-						aria-label="Close sidebar"
-						className="fixed inset-0 z-40 bg-black/50 md:hidden"
-						onClick={() => setIsSidebarOpen(false)}
-						type="button"
-					/>
-				)}
-
-				<aside
-					className={`neo-sidebar fixed inset-y-0 left-0 z-50 flex w-72 flex-col transition-transform duration-300 ease-in-out md:static ${
-						isSidebarOpen
-							? "translate-x-0"
-							: "-translate-x-full md:translate-x-0"
-					}`}
-				>
-					<div className="neo-border-b flex items-center justify-between p-6">
-						<h1 className="flex items-center gap-2 text-2xl font-bold tracking-tighter uppercase">
-							<Music className="h-6 w-6" />
-							UtaSensei
-						</h1>
-						<button
-							className="md:hidden"
-							onClick={() => setIsSidebarOpen(false)}
-							type="button"
-						>
-							<X className="h-6 w-6" />
-						</button>
-					</div>
-
-					<div className="flex-1 overflow-y-auto p-4">
-						<h2 className="mb-4 text-sm font-bold tracking-widest uppercase neo-text-muted">
-							Your Library
-						</h2>
-						<div className="space-y-3">
-							{songsList.map((song) => (
-								<button
-									className={`w-full p-3 text-left ${
-										selectedSongId === song.id
-											? "neo-card"
-											: "neo-card-no-hover opacity-80 hover:opacity-100"
-									} flex items-center gap-3`}
-									key={song.id}
-									onClick={() => {
-										setSelectedSongId(song.id);
+				<AnimatePresence>
+					{isSidebarOpen && (
+						<>
+							<motion.button
+								animate={{ opacity: 1 }}
+								aria-label="Close sidebar"
+								className="fixed inset-0 z-40 bg-black/50 md:hidden"
+								exit={{ opacity: 0 }}
+								initial={{ opacity: 0 }}
+								onClick={() => setIsSidebarOpen(false)}
+								transition={{ duration: 0.22, ease: "easeOut" }}
+								type="button"
+							/>
+							<motion.aside
+								animate={{ x: 0 }}
+								className="neo-sidebar fixed inset-y-0 left-0 z-50 flex w-72 flex-col md:hidden"
+								exit={{ x: "-100%" }}
+								initial={{ x: "-100%" }}
+								transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
+							>
+								<SidebarContent
+									onClose={() => setIsSidebarOpen(false)}
+									onNewSong={() => {
+										setSelectedSongId(null);
 										setIsSidebarOpen(false);
 									}}
-									type="button"
-								>
-									<div className="neo-border flex h-10 w-10 shrink-0 items-center justify-center bg-[var(--bg-accent)]">
-										<Play className="ml-1 h-5 w-5 text-[var(--text-on-accent)]" />
-									</div>
-									<div className="overflow-hidden">
-										<p className="truncate font-bold">{song.title}</p>
-										<p className="truncate text-xs neo-text-muted">
-											{song.artist}
-										</p>
-									</div>
-								</button>
-							))}
-						</div>
-					</div>
+									onSelectSong={(songId) => {
+										setSelectedSongId(songId);
+										setIsSidebarOpen(false);
+									}}
+									selectedSongId={selectedSongId}
+									songsList={songsList}
+								/>
+							</motion.aside>
+						</>
+					)}
+				</AnimatePresence>
 
-					<div className="neo-border-t p-4">
-						<button
-							className="neo-button flex w-full items-center justify-center gap-2 py-3"
-							onClick={() => {
-								setSelectedSongId(null);
-								setIsSidebarOpen(false);
-							}}
-							type="button"
-						>
-							<Search className="h-5 w-5" />
-							New Song
-						</button>
-					</div>
+				<aside className="neo-sidebar hidden md:flex md:w-72 md:flex-col">
+					<SidebarContent
+						onClose={() => setIsSidebarOpen(false)}
+						onNewSong={() => {
+							setSelectedSongId(null);
+							setIsSidebarOpen(false);
+						}}
+						onSelectSong={(songId) => {
+							setSelectedSongId(songId);
+							setIsSidebarOpen(false);
+						}}
+						selectedSongId={selectedSongId}
+						songsList={songsList}
+					/>
 				</aside>
 
 				<main className="relative flex h-full flex-1 flex-col overflow-hidden">
@@ -771,48 +813,66 @@ export default function App() {
 																{line.translationText}
 															</p>
 														</div>
-														<div className="neo-border shrink-0 bg-[var(--bg-app)] p-2">
-															{isExpanded ? (
-																<ChevronUp className="h-5 w-5" />
-															) : (
-																<ChevronDown className="h-5 w-5" />
-															)}
-														</div>
+														<motion.div
+															animate={{ rotate: isExpanded ? 180 : 0 }}
+															className="neo-border shrink-0 bg-[var(--bg-app)] p-2"
+															initial={false}
+															transition={{
+																duration: 0.24,
+																ease: [0.22, 1, 0.36, 1],
+															}}
+														>
+															<ChevronDown className="h-5 w-5" />
+														</motion.div>
 													</button>
 
-													{isExpanded && (
-														<div className="neo-border-t bg-[var(--bg-app)]/30 p-4 md:p-6">
-															<div className="mb-6">
-																<h4 className="mb-2 flex items-center gap-2 text-sm font-bold tracking-widest uppercase">
-																	<BookOpen className="h-4 w-4" /> Explanation
-																</h4>
-																<p className="font-mono text-sm leading-relaxed md:text-base">
-																	{line.longFormExplanation}
-																</p>
-															</div>
+													<AnimatePresence initial={false}>
+														{isExpanded && (
+															<motion.div
+																animate={{ height: "auto", opacity: 1 }}
+																className="overflow-hidden"
+																exit={{ height: 0, opacity: 0 }}
+																initial={{ height: 0, opacity: 0 }}
+																transition={{
+																	duration: 0.28,
+																	ease: [0.22, 1, 0.36, 1],
+																}}
+															>
+																<div className="neo-border-t bg-[var(--bg-app)]/30 p-4 md:p-6">
+																	<div className="mb-6">
+																		<h4 className="mb-2 flex items-center gap-2 text-sm font-bold tracking-widest uppercase">
+																			<BookOpen className="h-4 w-4" />{" "}
+																			Explanation
+																		</h4>
+																		<p className="font-mono text-sm leading-relaxed md:text-base">
+																			{line.longFormExplanation}
+																		</p>
+																	</div>
 
-															<div>
-																<h4 className="mb-3 text-sm font-bold tracking-widest uppercase">
-																	Vocabulary
-																</h4>
-																<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-																	{line.vocabularies.map((vocabulary) => (
-																		<div
-																			className="neo-border bg-[var(--bg-card)] p-3"
-																			key={`${line.lineIndex}-${vocabulary.originalText}`}
-																		>
-																			<p className="mb-1 font-bold">
-																				{vocabulary.originalText}
-																			</p>
-																			<p className="font-mono text-xs neo-text-muted">
-																				{vocabulary.explanation}
-																			</p>
+																	<div>
+																		<h4 className="mb-3 text-sm font-bold tracking-widest uppercase">
+																			Vocabulary
+																		</h4>
+																		<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+																			{line.vocabularies.map((vocabulary) => (
+																				<div
+																					className="neo-border bg-[var(--bg-card)] p-3"
+																					key={`${line.lineIndex}-${vocabulary.originalText}`}
+																				>
+																					<p className="mb-1 font-bold">
+																						{vocabulary.originalText}
+																					</p>
+																					<p className="font-mono text-xs neo-text-muted">
+																						{vocabulary.explanation}
+																					</p>
+																				</div>
+																			))}
 																		</div>
-																	))}
+																	</div>
 																</div>
-															</div>
-														</div>
-													)}
+															</motion.div>
+														)}
+													</AnimatePresence>
 												</div>
 											);
 										})}

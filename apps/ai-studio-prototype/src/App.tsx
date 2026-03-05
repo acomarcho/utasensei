@@ -83,19 +83,27 @@ const FLASHCARD_RUN = buildMockFlashcardRun();
 
 function ReviewDecisionBar({
 	disabled,
-	isFlipped,
 	onFlip,
 	onForget,
 	onRemember,
 }: {
 	disabled?: boolean;
-	isFlipped: boolean;
 	onFlip: () => void;
 	onForget: () => void;
 	onRemember: () => void;
 }) {
 	return (
-		<div className="grid grid-cols-2 gap-2 p-3 neo-border-t bg-[var(--bg-app)]/70 sm:grid-cols-[1fr_auto_1fr] sm:gap-3 sm:p-4">
+		<div className="grid grid-cols-2 gap-2 p-3 neo-border-t bg-[var(--bg-app)]/70 sm:gap-3 sm:p-4">
+			<button
+				className="neo-card-no-hover col-span-2 min-w-0 px-3 py-3 text-[11px] font-bold uppercase tracking-[0.18em] hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-50 sm:px-4"
+				disabled={disabled}
+				onClick={onFlip}
+				type="button"
+			>
+				<span className="flex items-center justify-center gap-2">
+					<RotateCcw className="h-4 w-4 shrink-0" /> Flip
+				</span>
+			</button>
 			<button
 				className="neo-card-no-hover min-w-0 px-3 py-3 text-xs font-bold uppercase tracking-[0.16em] hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-50 sm:px-4"
 				disabled={disabled}
@@ -104,17 +112,6 @@ function ReviewDecisionBar({
 			>
 				<span className="flex items-center justify-center gap-2">
 					<X className="h-4 w-4 shrink-0" /> Again
-				</span>
-			</button>
-			<button
-				className="neo-card-no-hover order-3 col-span-2 min-w-0 px-3 py-3 text-[11px] font-bold uppercase tracking-[0.18em] hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-50 sm:order-none sm:col-span-1 sm:px-4"
-				disabled={disabled}
-				onClick={onFlip}
-				type="button"
-			>
-				<span className="flex items-center justify-center gap-2">
-					<RotateCcw className="h-4 w-4 shrink-0" />{" "}
-					{isFlipped ? "Front" : "Flip"}
 				</span>
 			</button>
 			<button
@@ -135,7 +132,6 @@ function ReviewCardFace({
 	card,
 	disabled,
 	isBack,
-	isFlipped,
 	onFlip,
 	onForget,
 	onRemember,
@@ -143,7 +139,6 @@ function ReviewCardFace({
 	card: MockFlashcard;
 	disabled?: boolean;
 	isBack: boolean;
-	isFlipped: boolean;
 	onFlip: () => void;
 	onForget: () => void;
 	onRemember: () => void;
@@ -186,7 +181,6 @@ function ReviewCardFace({
 
 				<ReviewDecisionBar
 					disabled={disabled}
-					isFlipped={isFlipped}
 					onFlip={onFlip}
 					onForget={onForget}
 					onRemember={onRemember}
@@ -231,7 +225,6 @@ function ReviewTopCard({
 					<ReviewCardFace
 						card={card}
 						isBack={false}
-						isFlipped={isFlipped}
 						onFlip={onFlip}
 						onForget={onForget}
 						onRemember={onRemember}
@@ -239,7 +232,6 @@ function ReviewTopCard({
 					<ReviewCardFace
 						card={card}
 						isBack
-						isFlipped={isFlipped}
 						onFlip={onFlip}
 						onForget={onForget}
 						onRemember={onRemember}
@@ -351,14 +343,14 @@ function FlashcardReviewModal({
 					>
 						<div className="neo-noise absolute inset-0" />
 
-						<div className="relative order-1 flex min-h-[430px] items-center justify-center overflow-hidden p-4 sm:min-h-[480px] sm:p-6 md:min-h-[560px] md:p-8">
+						<div className="relative order-2 flex min-h-[460px] items-center justify-center overflow-hidden px-3 pb-5 pt-2 sm:min-h-[520px] sm:px-5 sm:pb-6 sm:pt-3 md:min-h-[560px] md:p-8">
 							<div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,140,0,0.18),_transparent_48%)]" />
 							<div className="absolute left-4 top-6 h-16 w-16 rotate-[-10deg] neo-border bg-[var(--bg-accent)]/30 sm:left-8 sm:top-10 sm:h-24 sm:w-24" />
 							<div className="absolute bottom-8 right-4 h-12 w-12 rotate-[8deg] neo-border bg-[var(--bg-card-hover)] sm:bottom-14 sm:right-10 sm:h-16 sm:w-16" />
 
 							{currentCard ? (
 								<div className="relative z-10 flex w-full max-w-[460px] min-w-0 flex-col items-center justify-center">
-									<div className="flashcard-scene relative h-[430px] w-full sm:h-[500px] md:h-[540px]">
+									<div className="flashcard-scene relative h-[450px] w-full sm:h-[520px] md:h-[540px]">
 										{visibleCards
 											.slice()
 											.reverse()
@@ -421,18 +413,18 @@ function FlashcardReviewModal({
 							)}
 						</div>
 
-						<div className="relative order-2 overflow-y-auto border-t-2 border-black p-4 sm:p-5 lg:border-t-0 lg:border-l-2 lg:p-6">
-							<div className="flex items-start justify-between gap-3">
+						<div className="relative order-1 border-b-2 border-black p-3 sm:p-4 lg:order-2 lg:overflow-y-auto lg:border-b-0 lg:border-l-2 lg:p-6">
+							<div className="flex items-center justify-between gap-3">
 								<div className="min-w-0">
-									<p className="text-[10px] font-bold uppercase tracking-[0.22em] neo-text-muted sm:text-[11px]">
+									<p className="text-[10px] font-bold uppercase tracking-[0.18em] neo-text-muted sm:text-[11px]">
 										Flashcard review
 									</p>
-									<h3 className="neo-wrap-anywhere mt-2 text-3xl font-bold uppercase tracking-[-0.05em] sm:text-4xl">
+									<h3 className="neo-wrap-anywhere mt-1 text-2xl font-bold uppercase tracking-[-0.05em] sm:text-3xl lg:mt-2 lg:text-4xl">
 										One Voice
 									</h3>
 								</div>
 								<button
-									className="neo-card-no-hover shrink-0 p-3 hover:bg-[var(--bg-card-hover)]"
+									className="neo-card-no-hover shrink-0 p-2.5 hover:bg-[var(--bg-card-hover)] sm:p-3"
 									onClick={onClose}
 									type="button"
 								>
@@ -440,46 +432,42 @@ function FlashcardReviewModal({
 								</button>
 							</div>
 
-							<div className="mt-5 space-y-3 sm:space-y-4">
-								<div className="neo-card-no-hover bg-[var(--bg-card-hover)] p-4">
-									<p className="text-[10px] font-bold uppercase tracking-[0.22em] neo-text-muted sm:text-[11px]">
-										Session progress
-									</p>
-									<div className="mt-3 h-3 overflow-hidden neo-border bg-[var(--bg-app)] sm:mt-4">
-										<motion.div
-											animate={{ width: `${progress}%` }}
-											className="h-full bg-[var(--bg-accent)]"
-											initial={false}
-										/>
-									</div>
-									<div className="mt-3 grid grid-cols-3 gap-2 text-center sm:mt-4">
-										<div className="neo-border neo-stat-chip bg-[var(--bg-app)] px-2 py-3">
-											<p className="text-[10px] font-bold uppercase tracking-[0.14em] neo-text-muted">
-												Known
-											</p>
-											<p className="mt-1 text-xl font-bold sm:text-2xl">
-												{rememberedCount}
-											</p>
-										</div>
-										<div className="neo-border neo-stat-chip bg-[var(--bg-app)] px-2 py-3">
-											<p className="text-[10px] font-bold uppercase tracking-[0.14em] neo-text-muted">
-												Again
-											</p>
-											<p className="mt-1 text-xl font-bold sm:text-2xl">
-												{forgottenCount}
-											</p>
-										</div>
-										<div className="neo-border neo-stat-chip bg-[var(--bg-app)] px-2 py-3">
-											<p className="text-[10px] font-bold uppercase tracking-[0.14em] neo-text-muted">
-												Left
-											</p>
-											<p className="mt-1 text-xl font-bold sm:text-2xl">
-												{reviewLeft.length}
-											</p>
-										</div>
-									</div>
-								</div>
+							<div className="mt-3 h-2.5 overflow-hidden neo-border bg-[var(--bg-card-hover)] sm:mt-4 lg:h-3">
+								<motion.div
+									animate={{ width: `${progress}%` }}
+									className="h-full bg-[var(--bg-accent)]"
+									initial={false}
+								/>
+							</div>
 
+							<div className="mt-3 grid grid-cols-3 gap-2 text-center lg:mt-5">
+								<div className="neo-border neo-stat-chip bg-[var(--bg-card)] px-2 py-2">
+									<p className="text-[9px] font-bold uppercase tracking-[0.12em] neo-text-muted sm:text-[10px]">
+										Known
+									</p>
+									<p className="mt-1 text-lg font-bold sm:text-xl lg:text-2xl">
+										{rememberedCount}
+									</p>
+								</div>
+								<div className="neo-border neo-stat-chip bg-[var(--bg-card)] px-2 py-2">
+									<p className="text-[9px] font-bold uppercase tracking-[0.12em] neo-text-muted sm:text-[10px]">
+										Again
+									</p>
+									<p className="mt-1 text-lg font-bold sm:text-xl lg:text-2xl">
+										{forgottenCount}
+									</p>
+								</div>
+								<div className="neo-border neo-stat-chip bg-[var(--bg-card)] px-2 py-2">
+									<p className="text-[9px] font-bold uppercase tracking-[0.12em] neo-text-muted sm:text-[10px]">
+										Left
+									</p>
+									<p className="mt-1 text-lg font-bold sm:text-xl lg:text-2xl">
+										{reviewLeft.length}
+									</p>
+								</div>
+							</div>
+
+							<div className="mt-4 hidden lg:block">
 								<div className="neo-card-no-hover bg-[var(--bg-accent)] p-4 text-[var(--text-on-accent)]">
 									<p className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.22em] sm:text-[11px]">
 										<Sparkles className="h-4 w-4 shrink-0" /> Review tip

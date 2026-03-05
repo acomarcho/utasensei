@@ -2,6 +2,7 @@
 
 import "dotenv/config";
 import { runExtractHtml } from "./commands/extract-html";
+import { runFlashcards } from "./commands/flashcards";
 import { runSongs } from "./commands/songs";
 import { runTranslateSong } from "./commands/translate-song";
 
@@ -10,17 +11,22 @@ const HELP_TEXT = [
   "  pnpm cli extract-html <url>",
   "  pnpm cli translate-song <url>",
   "  pnpm cli songs [id]",
+  "  pnpm cli flashcards build <songId>",
+  "  pnpm cli flashcards list <songId>",
   "",
   "Examples:",
   "  pnpm cli extract-html https://genius.com/Genius-romanizations-rokudenashi-one-voice-romanized-lyrics",
   "  pnpm cli translate-song https://www.lyrical-nonsense.com/global/lyrics/sayuri/hana-no-tou/",
   "  pnpm cli songs",
-  "  pnpm cli songs 1"
+  "  pnpm cli songs 1",
+  "  pnpm cli flashcards build 1",
+  "  pnpm cli flashcards list 1"
 ].join("\n");
 
 type CliArgs =
   | { command: "extract-html" | "translate-song"; url: string }
-  | { command: "songs"; id?: number };
+  | { command: "songs"; id?: number }
+  | { command: "flashcards"; action: "build" | "list"; songId: number };
 
 function parseCliArgs(argv: string[]): CliArgs {
   const rawArgs = argv.slice(2).filter((arg) => arg.trim().length > 0);
@@ -44,6 +50,24 @@ function parseCliArgs(argv: string[]): CliArgs {
     }
 
     return { command: "songs", id: parsedId };
+  }
+
+  if (command === "flashcards") {
+    const action = args[1];
+    const idArg = args[2];
+    if (action !== "build" && action !== "list") {
+      throw new Error(`Invalid flashcards action "${action}".\n\n${HELP_TEXT}`);
+    }
+    if (!idArg) {
+      throw new Error(`Missing song id.\n\n${HELP_TEXT}`);
+    }
+
+    const parsedId = Number(idArg);
+    if (!Number.isInteger(parsedId) || parsedId <= 0) {
+      throw new Error(`Invalid song id "${idArg}".\n\n${HELP_TEXT}`);
+    }
+
+    return { command: "flashcards", action, songId: parsedId };
   }
 
   const urlArg = args[1];
@@ -82,6 +106,9 @@ async function main(): Promise<void> {
         return;
       case "songs":
         await runSongs(parsed.id);
+        return;
+      case "flashcards":
+        await runFlashcards(parsed.action, parsed.songId);
         return;
       default: {
         const exhaustiveCheck: never = parsed;

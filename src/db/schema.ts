@@ -108,3 +108,28 @@ export const vocabEntriesRelations = relations(vocabEntries, ({ one }) => ({
     references: [translationLines.id]
   })
 }));
+
+export const flashcards = sqliteTable("flashcards", {
+  id: int().primaryKey({ autoIncrement: true }),
+  runId: int().notNull().references(() => translationRuns.id),
+  front: text().notNull(),
+  back: text().notNull(),
+  sourceTranslationLineId: int().references(() => translationLines.id),
+  sourceVocabEntryId: int().references(() => vocabEntries.id),
+  createdAt: integer().notNull().default(sql`(unixepoch())`)
+});
+
+export const flashcardsRelations = relations(flashcards, ({ one }) => ({
+  run: one(translationRuns, {
+    fields: [flashcards.runId],
+    references: [translationRuns.id]
+  }),
+  translationLine: one(translationLines, {
+    fields: [flashcards.sourceTranslationLineId],
+    references: [translationLines.id]
+  }),
+  vocabEntry: one(vocabEntries, {
+    fields: [flashcards.sourceVocabEntryId],
+    references: [vocabEntries.id]
+  })
+}));

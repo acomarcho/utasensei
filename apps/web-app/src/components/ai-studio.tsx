@@ -714,8 +714,6 @@ export function NewSongPage() {
 	const generationSourceRef = useRef<EventSource | null>(null);
 	const navigate = useNavigate();
 	const router = useRouter();
-	const latestStatus =
-		statusMessages[statusMessages.length - 1]?.message ?? null;
 
 	const handleGenerate = useCallback(async () => {
 		const nextUrl = urlInput.trim();

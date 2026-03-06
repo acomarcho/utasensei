@@ -10,11 +10,11 @@ import {
 	vocabEntries,
 } from "../db/schema";
 import { fetchMarkdownSource } from "../lib/markdown-source";
+import type { SongGenerationModelId } from "../lib/song-generation-models";
 
 // Keep CLI stdout clean JSON for piping/parsing.
 (globalThis as { AI_SDK_LOG_WARNINGS?: boolean }).AI_SDK_LOG_WARNINGS = false;
 
-const MODEL_ID = "accounts/fireworks/models/minimax-m2p5";
 const SOURCE_MARKDOWN_PROMPT_CHAR_LIMIT = 140_000;
 
 const songMetadataSchema = z.object({
@@ -81,8 +81,11 @@ function truncateForPrompt(text: string, maxChars: number): string {
 	return `${text.slice(0, maxChars)}\n# [truncated due to size]`;
 }
 
-export async function runTranslateSong(url: string): Promise<void> {
-	logCliDebug("run_start", { modelId: MODEL_ID, url });
+export async function runTranslateSong(
+	url: string,
+	modelId: SongGenerationModelId,
+): Promise<void> {
+	logCliDebug("run_start", { modelId, url });
 	if (!process.env.FIREWORKS_API_KEY) {
 		throw new Error(
 			"Missing FIREWORKS_API_KEY. Add it to .env (see .env.example).",
@@ -111,7 +114,7 @@ export async function runTranslateSong(url: string): Promise<void> {
 	};
 
 	const agent = new ToolLoopAgent({
-		model: fireworks(MODEL_ID),
+		model: fireworks(modelId),
 		stopWhen: stepCountIs(12),
 		instructions: [
 			"You are a strict Japanese-learning content generator that MUST update state via tools.",
@@ -402,7 +405,7 @@ export async function runTranslateSong(url: string): Promise<void> {
 			.values({
 				songId: song.id,
 				sourceUrl: source.sourceUrl,
-				modelId: MODEL_ID,
+				modelId,
 			})
 			.returning({ id: translationRuns.id });
 

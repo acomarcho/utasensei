@@ -1,5 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { generateSongFromUrl } from "~/utils/song-generation.server";
+import {
+	DEFAULT_SONG_GENERATION_MODEL_ID,
+	isSongGenerationModelId,
+} from "~/utils/song-generation-models";
 
 function formatSseEvent(event: string, data: unknown) {
 	return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -12,6 +16,9 @@ export const Route = createFileRoute("/api/generate-song-progress")({
 				const encoder = new TextEncoder();
 				const url = new URL(request.url);
 				const sourceUrl = url.searchParams.get("url")?.trim() ?? "";
+				const rawModelId =
+					url.searchParams.get("model")?.trim() ??
+					DEFAULT_SONG_GENERATION_MODEL_ID;
 
 				const stream = new ReadableStream({
 					async start(controller) {
@@ -46,20 +53,31 @@ export const Route = createFileRoute("/api/generate-song-progress")({
 							return;
 						}
 
+						if (!isSongGenerationModelId(rawModelId)) {
+							sendEvent("generation-error", {
+								message: "Invalid model selection.",
+							});
+							closeStream();
+							return;
+						}
+
 						sendEvent("open", { message: "SSE connection established." });
 
 						try {
-							const result = await generateSongFromUrl(sourceUrl, (event) => {
-								if (request.signal.aborted) {
-									return;
-								}
+							const result = await generateSongFromUrl(sourceUrl, {
+								modelId: rawModelId,
+								onProgress: (event) => {
+									if (request.signal.aborted) {
+										return;
+									}
 
-								if (event.type === "status") {
-									sendEvent("progress", {
-										message: event.message,
-										step: event.step,
-									});
-								}
+									if (event.type === "status") {
+										sendEvent("progress", {
+											message: event.message,
+											step: event.step,
+										});
+									}
+								},
 							});
 
 							if (request.signal.aborted) {

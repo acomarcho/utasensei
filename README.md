@@ -37,7 +37,7 @@ FIREWORKS_API_KEY=your_key_here
 ```bash
 pnpm cli --help
 pnpm cli extract-html <url>
-pnpm cli translate-song <url>
+pnpm cli translate-song <url> [--model <modelId>]
 ```
 
 ### Run the AI Studio prototype

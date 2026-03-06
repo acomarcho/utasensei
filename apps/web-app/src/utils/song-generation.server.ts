@@ -14,10 +14,12 @@ import {
 	vocabEntries,
 } from "~/utils/db/schema";
 import { fetchMarkdownSource } from "~/utils/markdown-source.server";
+import {
+	DEFAULT_SONG_GENERATION_MODEL_ID,
+	type SongGenerationModelId,
+} from "~/utils/song-generation-models";
 
 (globalThis as { AI_SDK_LOG_WARNINGS?: boolean }).AI_SDK_LOG_WARNINGS = false;
-
-const MODEL_ID = "accounts/fireworks/models/minimax-m2p5";
 const SOURCE_MARKDOWN_PROMPT_CHAR_LIMIT = 140_000;
 
 const songMetadataSchema = z.object({
@@ -128,6 +130,7 @@ async function reportStatus(
 async function saveGeneratedSong(
 	state: TeachState,
 	sourceUrl: string,
+	modelId: SongGenerationModelId,
 ): Promise<SavedSongResult> {
 	const songMetadata = state.songMetadata;
 	if (!songMetadata) {
@@ -152,7 +155,7 @@ async function saveGeneratedSong(
 			.values({
 				songId: song.id,
 				sourceUrl,
-				modelId: MODEL_ID,
+				modelId,
 			})
 			.returning({ id: translationRuns.id });
 
@@ -326,8 +329,12 @@ export async function buildFlashcardsForSong(songId: number): Promise<number> {
 
 export async function generateSongFromUrl(
 	rawUrl: string,
-	onProgress?: SongGenerationProgressCallback,
+	options: {
+		modelId?: SongGenerationModelId;
+		onProgress?: SongGenerationProgressCallback;
+	} = {},
 ): Promise<{ flashcardCount: number; runId: number; songId: number }> {
+	const { modelId = DEFAULT_SONG_GENERATION_MODEL_ID, onProgress } = options;
 	const url = rawUrl.trim();
 	if (!url) {
 		throw new Error("A song URL is required.");
@@ -370,7 +377,7 @@ export async function generateSongFromUrl(
 	let hasReportedExplanations = false;
 
 	const agent = new ToolLoopAgent({
-		model: fireworks(MODEL_ID),
+		model: fireworks(modelId),
 		stopWhen: stepCountIs(12),
 		instructions: [
 			"You are a strict Japanese-learning content generator that MUST update state via tools.",
@@ -612,7 +619,7 @@ export async function generateSongFromUrl(
 	].join("\n");
 
 	logGenerationDebug("agent_generate_start", {
-		modelId: MODEL_ID,
+		modelId,
 		promptLength: prompt.length,
 		promptPreview: prompt.slice(0, 600),
 	});
@@ -628,7 +635,7 @@ export async function generateSongFromUrl(
 	} catch (error) {
 		console.error("[song-generation:agent_generate_failure]", {
 			error: formatGenerationError(error),
-			modelId: MODEL_ID,
+			modelId,
 			promptLength: prompt.length,
 			promptPreview: prompt.slice(0, 600),
 			stateSnapshot: {
@@ -658,7 +665,7 @@ export async function generateSongFromUrl(
 		);
 	}
 
-	const saved = await saveGeneratedSong(state, source.sourceUrl);
+	const saved = await saveGeneratedSong(state, source.sourceUrl, modelId);
 	state.dbSongId = saved.songId;
 	state.dbRunId = saved.runId;
 

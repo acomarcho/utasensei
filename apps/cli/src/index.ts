@@ -5,11 +5,17 @@ import { runExtractHtml } from "./commands/extract-html";
 import { runFlashcards } from "./commands/flashcards";
 import { runSongs } from "./commands/songs";
 import { runTranslateSong } from "./commands/translate-song";
+import {
+	DEFAULT_SONG_GENERATION_MODEL_ID,
+	isSongGenerationModelId,
+	SONG_GENERATION_MODEL_IDS,
+	type SongGenerationModelId,
+} from "./lib/song-generation-models";
 
 const HELP_TEXT = [
 	"Usage:",
 	"  pnpm cli extract-html <url>",
-	"  pnpm cli translate-song <url>",
+	"  pnpm cli translate-song <url> [--model <modelId>]",
 	"  pnpm cli songs [id]",
 	"  pnpm cli songs delete <id>",
 	"  pnpm cli flashcards build <songId>",
@@ -18,6 +24,7 @@ const HELP_TEXT = [
 	"Examples:",
 	"  pnpm cli extract-html https://genius.com/Genius-romanizations-rokudenashi-one-voice-romanized-lyrics",
 	"  pnpm cli translate-song https://www.lyrical-nonsense.com/global/lyrics/sayuri/hana-no-tou/",
+	`  pnpm cli translate-song https://www.lyrical-nonsense.com/global/lyrics/sayuri/hana-no-tou/ --model ${SONG_GENERATION_MODEL_IDS[1]}`,
 	"  pnpm cli songs",
 	"  pnpm cli songs 1",
 	"  pnpm cli songs delete 1",
@@ -26,10 +33,65 @@ const HELP_TEXT = [
 ].join("\n");
 
 type CliArgs =
-	| { command: "extract-html" | "translate-song"; url: string }
+	| { command: "extract-html"; url: string }
+	| { command: "translate-song"; modelId: SongGenerationModelId; url: string }
 	| { command: "songs"; action: "list"; id?: number }
 	| { command: "songs"; action: "delete"; id: number }
 	| { command: "flashcards"; action: "build" | "list"; songId: number };
+
+function parseUrlArg(rawValue: string | undefined): string {
+	if (!rawValue) {
+		throw new Error(`Missing URL.\n\n${HELP_TEXT}`);
+	}
+
+	let parsed: URL;
+	try {
+		parsed = new URL(rawValue);
+	} catch {
+		throw new Error(`Invalid URL.\n\n${HELP_TEXT}`);
+	}
+
+	if (!["http:", "https:"].includes(parsed.protocol)) {
+		throw new Error("Only http/https URLs are supported.");
+	}
+
+	return parsed.toString();
+}
+
+function parseTranslateSongArgs(args: string[]): {
+	modelId: SongGenerationModelId;
+	url: string;
+} {
+	const url = parseUrlArg(args[1]);
+
+	if (args.length === 2) {
+		return {
+			modelId: DEFAULT_SONG_GENERATION_MODEL_ID,
+			url,
+		};
+	}
+
+	if (args[2] !== "--model") {
+		throw new Error(`Unknown option \"${args[2]}\".\n\n${HELP_TEXT}`);
+	}
+
+	const rawModelId = args[3];
+	if (!rawModelId) {
+		throw new Error(`Missing model id after --model.\n\n${HELP_TEXT}`);
+	}
+
+	if (args.length > 4) {
+		throw new Error(`Too many arguments for translate-song.\n\n${HELP_TEXT}`);
+	}
+
+	if (!isSongGenerationModelId(rawModelId)) {
+		throw new Error(
+			`Invalid model \"${rawModelId}\". Allowed values: ${SONG_GENERATION_MODEL_IDS.join(", ")}.\n\n${HELP_TEXT}`,
+		);
+	}
+
+	return { modelId: rawModelId, url };
+}
 
 function parsePositiveInteger(rawValue: string, label: string): number {
 	const parsedValue = Number(rawValue);
@@ -93,24 +155,16 @@ function parseCliArgs(argv: string[]): CliArgs {
 		};
 	}
 
-	const urlArg = args[1];
-	if (!urlArg) {
-		throw new Error(`Missing URL.\n\n${HELP_TEXT}`);
+	if (command === "extract-html") {
+		if (args.length > 2) {
+			throw new Error(`Too many arguments for extract-html.\n\n${HELP_TEXT}`);
+		}
+
+		return { command, url: parseUrlArg(args[1]) };
 	}
 
-	let parsed: URL;
-	try {
-		parsed = new URL(urlArg);
-	} catch {
-		throw new Error(`Invalid URL.\n\n${HELP_TEXT}`);
-	}
-
-	if (!["http:", "https:"].includes(parsed.protocol)) {
-		throw new Error("Only http/https URLs are supported.");
-	}
-
-	if (command === "extract-html" || command === "translate-song") {
-		return { command, url: parsed.toString() };
+	if (command === "translate-song") {
+		return { command, ...parseTranslateSongArgs(args) };
 	}
 
 	throw new Error(`Unknown command "${command}".\n\n${HELP_TEXT}`);
@@ -125,7 +179,7 @@ async function main(): Promise<void> {
 				await runExtractHtml(parsed.url);
 				return;
 			case "translate-song":
-				await runTranslateSong(parsed.url);
+				await runTranslateSong(parsed.url, parsed.modelId);
 				return;
 			case "songs":
 				await runSongs(parsed.action, parsed.id);

@@ -72,7 +72,7 @@ function parseTranslateSongArgs(args: string[]): {
 	}
 
 	if (args[2] !== "--model") {
-		throw new Error(`Unknown option \"${args[2]}\".\n\n${HELP_TEXT}`);
+		throw new Error(`Unknown option "${args[2]}".\n\n${HELP_TEXT}`);
 	}
 
 	const rawModelId = args[3];
@@ -86,7 +86,7 @@ function parseTranslateSongArgs(args: string[]): {
 
 	if (!isSongGenerationModelId(rawModelId)) {
 		throw new Error(
-			`Invalid model \"${rawModelId}\". Allowed values: ${SONG_GENERATION_MODEL_IDS.join(", ")}.\n\n${HELP_TEXT}`,
+			`Invalid model "${rawModelId}". Allowed values: ${SONG_GENERATION_MODEL_IDS.join(", ")}.\n\n${HELP_TEXT}`,
 		);
 	}
 
@@ -96,7 +96,7 @@ function parseTranslateSongArgs(args: string[]): {
 function parsePositiveInteger(rawValue: string, label: string): number {
 	const parsedValue = Number(rawValue);
 	if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
-		throw new Error(`Invalid ${label} \"${rawValue}\".\n\n${HELP_TEXT}`);
+		throw new Error(`Invalid ${label} "${rawValue}".\n\n${HELP_TEXT}`);
 	}
 
 	return parsedValue;

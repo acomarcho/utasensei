@@ -98,6 +98,7 @@ function truncateForPrompt(text: string, maxChars: number): string {
 function createStatusEvent(
 	step:
 		| "fetching_song_lyrics"
+		| "extracting_lyrics"
 		| "generating_translation"
 		| "generating_explanations"
 		| "generating_flashcards",
@@ -115,6 +116,7 @@ async function reportStatus(
 	onProgress: SongGenerationProgressCallback | undefined,
 	step:
 		| "fetching_song_lyrics"
+		| "extracting_lyrics"
 		| "generating_translation"
 		| "generating_explanations"
 		| "generating_flashcards",
@@ -358,6 +360,8 @@ export async function generateSongFromUrl(
 		SOURCE_MARKDOWN_PROMPT_CHAR_LIMIT,
 	);
 
+	await reportStatus(onProgress, "extracting_lyrics", "Extracting lyrics...");
+
 	logGenerationDebug("markdown_fetched", {
 		pageTitle: source.title,
 		pageUrl: source.sourceUrl,
@@ -435,6 +439,16 @@ export async function generateSongFromUrl(
 					state.lyricsLines = normalized;
 					state.translations = [];
 					state.vocabularyExplanations = [];
+
+					if (!hasReportedTranslation) {
+						hasReportedTranslation = true;
+						await reportStatus(
+							onProgress,
+							"generating_translation",
+							"Generating translations...",
+						);
+					}
+
 					return state;
 				},
 			}),
@@ -467,21 +481,22 @@ export async function generateSongFromUrl(
 						}
 					}
 
-					if (!hasReportedTranslation) {
-						hasReportedTranslation = true;
-						await reportStatus(
-							onProgress,
-							"generating_translation",
-							"Generating translation...",
-						);
-					}
-
 					state.translations = translations.map((line, id) => ({
 						id,
 						original: normalizeLine(line.original),
 						translation: normalizeLine(line.translation),
 					}));
 					state.vocabularyExplanations = [];
+
+					if (!hasReportedExplanations) {
+						hasReportedExplanations = true;
+						await reportStatus(
+							onProgress,
+							"generating_explanations",
+							"Generating explanations and vocabulary notes...",
+						);
+					}
+
 					return state;
 				},
 			}),
@@ -522,15 +537,6 @@ export async function generateSongFromUrl(
 						.filter((id) => !seen.has(id));
 					if (missingIds.length > 0) {
 						return `Missing explanation entries for translationId: ${missingIds.join(", ")}`;
-					}
-
-					if (!hasReportedExplanations) {
-						hasReportedExplanations = true;
-						await reportStatus(
-							onProgress,
-							"generating_explanations",
-							"Generating explanations and vocabularies...",
-						);
 					}
 
 					state.vocabularyExplanations = vocabularyExplanations.map(

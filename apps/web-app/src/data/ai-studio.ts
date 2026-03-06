@@ -57,6 +57,7 @@ export type SongPageData = {
 
 export type SongGenerationStep =
 	| "fetching_song_lyrics"
+	| "extracting_lyrics"
 	| "generating_translation"
 	| "generating_explanations"
 	| "generating_flashcards";

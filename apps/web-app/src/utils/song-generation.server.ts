@@ -17,7 +17,7 @@ import { fetchMarkdownSource } from "~/utils/markdown-source.server";
 
 (globalThis as { AI_SDK_LOG_WARNINGS?: boolean }).AI_SDK_LOG_WARNINGS = false;
 
-const MODEL_ID = "accounts/fireworks/models/glm-5";
+const MODEL_ID = "accounts/fireworks/models/minimax-m2p5";
 const SOURCE_MARKDOWN_PROMPT_CHAR_LIMIT = 140_000;
 
 const songMetadataSchema = z.object({

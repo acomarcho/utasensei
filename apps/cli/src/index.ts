@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import "dotenv/config";
+import { runChat } from "./commands/chat";
 import { runExtractHtml } from "./commands/extract-html";
 import { runFlashcards } from "./commands/flashcards";
 import { runSongs } from "./commands/songs";
@@ -20,6 +21,10 @@ const HELP_TEXT = [
 	"  pnpm cli songs delete <id>",
 	"  pnpm cli flashcards build <songId>",
 	"  pnpm cli flashcards list <songId>",
+	'  pnpm cli chat <songId> "<message>"',
+	'  pnpm cli chat <songId> --thread <threadId> "<message>"',
+	"  pnpm cli chat threads <songId>",
+	"  pnpm cli chat delete <threadId>",
 	"",
 	"Examples:",
 	"  pnpm cli extract-html https://genius.com/Genius-romanizations-rokudenashi-one-voice-romanized-lyrics",
@@ -30,6 +35,10 @@ const HELP_TEXT = [
 	"  pnpm cli songs delete 1",
 	"  pnpm cli flashcards build 1",
 	"  pnpm cli flashcards list 1",
+	'  pnpm cli chat 1 "What does this line imply?"',
+	'  pnpm cli chat 1 --thread 2 "Explain that more simply."',
+	"  pnpm cli chat threads 1",
+	"  pnpm cli chat delete 2",
 ].join("\n");
 
 type CliArgs =
@@ -37,7 +46,16 @@ type CliArgs =
 	| { command: "translate-song"; modelId: SongGenerationModelId; url: string }
 	| { command: "songs"; action: "list"; id?: number }
 	| { command: "songs"; action: "delete"; id: number }
-	| { command: "flashcards"; action: "build" | "list"; songId: number };
+	| { command: "flashcards"; action: "build" | "list"; songId: number }
+	| {
+			command: "chat";
+			action: "send";
+			songId: number;
+			message: string;
+			threadId?: number;
+	  }
+	| { command: "chat"; action: "threads"; songId: number }
+	| { command: "chat"; action: "delete"; threadId: number };
 
 function parseUrlArg(rawValue: string | undefined): string {
 	if (!rawValue) {
@@ -102,6 +120,15 @@ function parsePositiveInteger(rawValue: string, label: string): number {
 	return parsedValue;
 }
 
+function parseRequiredMessage(args: string[], startIndex: number): string {
+	const message = args.slice(startIndex).join(" ").trim();
+	if (!message) {
+		throw new Error(`Missing message.\n\n${HELP_TEXT}`);
+	}
+
+	return message;
+}
+
 function parseCliArgs(argv: string[]): CliArgs {
 	const rawArgs = argv.slice(2).filter((arg) => arg.trim().length > 0);
 	const args = rawArgs[0] === "--" ? rawArgs.slice(1) : rawArgs;
@@ -155,6 +182,66 @@ function parseCliArgs(argv: string[]): CliArgs {
 		};
 	}
 
+	if (command === "chat") {
+		const actionArg = args[1];
+		if (!actionArg) {
+			throw new Error(`Missing chat arguments.\n\n${HELP_TEXT}`);
+		}
+
+		if (actionArg === "threads") {
+			const songIdArg = args[2];
+			if (!songIdArg || args.length > 3) {
+				throw new Error(`Invalid chat threads usage.\n\n${HELP_TEXT}`);
+			}
+
+			return {
+				command: "chat",
+				action: "threads",
+				songId: parsePositiveInteger(songIdArg, "song id"),
+			};
+		}
+
+		if (actionArg === "delete") {
+			const threadIdArg = args[2];
+			if (!threadIdArg || args.length > 3) {
+				throw new Error(`Invalid chat delete usage.\n\n${HELP_TEXT}`);
+			}
+
+			return {
+				command: "chat",
+				action: "delete",
+				threadId: parsePositiveInteger(threadIdArg, "thread id"),
+			};
+		}
+
+		const songId = parsePositiveInteger(actionArg, "song id");
+		if (args[2] === "--thread") {
+			const threadIdArg = args[3];
+			if (!threadIdArg) {
+				throw new Error(`Missing thread id.\n\n${HELP_TEXT}`);
+			}
+
+			return {
+				command: "chat",
+				action: "send",
+				songId,
+				threadId: parsePositiveInteger(threadIdArg, "thread id"),
+				message: parseRequiredMessage(args, 4),
+			};
+		}
+
+		if (args[2]?.startsWith("--")) {
+			throw new Error(`Unknown option "${args[2]}".\n\n${HELP_TEXT}`);
+		}
+
+		return {
+			command: "chat",
+			action: "send",
+			songId,
+			message: parseRequiredMessage(args, 2),
+		};
+	}
+
 	if (command === "extract-html") {
 		if (args.length > 2) {
 			throw new Error(`Too many arguments for extract-html.\n\n${HELP_TEXT}`);
@@ -186,6 +273,9 @@ async function main(): Promise<void> {
 				return;
 			case "flashcards":
 				await runFlashcards(parsed.action, parsed.songId);
+				return;
+			case "chat":
+				await runChat(parsed);
 				return;
 			default: {
 				const exhaustiveCheck: never = parsed;

@@ -36,6 +36,7 @@ export const translationRunsRelations = relations(
 			references: [songs.id],
 		}),
 		lyricLines: many(lyricLines),
+		chatThreads: many(chatThreads),
 	}),
 );
 
@@ -141,5 +142,40 @@ export const flashcardsRelations = relations(flashcards, ({ one }) => ({
 	vocabEntry: one(vocabEntries, {
 		fields: [flashcards.sourceVocabEntryId],
 		references: [vocabEntries.id],
+	}),
+}));
+
+export const chatThreads = sqliteTable("chat_threads", {
+	id: int().primaryKey({ autoIncrement: true }),
+	runId: int()
+		.notNull()
+		.references(() => translationRuns.id),
+	title: text().notNull(),
+	createdAt: integer().notNull().default(sql`(unixepoch())`),
+	updatedAt: integer().notNull().default(sql`(unixepoch())`),
+});
+
+export const chatThreadsRelations = relations(chatThreads, ({ one, many }) => ({
+	run: one(translationRuns, {
+		fields: [chatThreads.runId],
+		references: [translationRuns.id],
+	}),
+	messages: many(chatMessages),
+}));
+
+export const chatMessages = sqliteTable("chat_messages", {
+	id: int().primaryKey({ autoIncrement: true }),
+	threadId: int()
+		.notNull()
+		.references(() => chatThreads.id),
+	role: text().notNull(),
+	content: text().notNull(),
+	createdAt: integer().notNull().default(sql`(unixepoch())`),
+});
+
+export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
+	thread: one(chatThreads, {
+		fields: [chatMessages.threadId],
+		references: [chatThreads.id],
 	}),
 }));

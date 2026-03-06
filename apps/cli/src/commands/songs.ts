@@ -1,6 +1,8 @@
 import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "../db/client";
 import {
+	chatMessages,
+	chatThreads,
 	flashcards,
 	lyricLines,
 	songs,
@@ -44,6 +46,8 @@ type DeleteSongResult = {
 		translationLines: number;
 		vocabEntries: number;
 		flashcards: number;
+		chatThreads: number;
+		chatMessages: number;
 	};
 };
 
@@ -186,7 +190,32 @@ async function deleteSong(songId: number): Promise<void> {
 					.where(inArray(flashcards.runId, runIds))
 			: [];
 
+	const chatThreadRows =
+		runIds.length > 0
+			? await db
+					.select({ id: chatThreads.id })
+					.from(chatThreads)
+					.where(inArray(chatThreads.runId, runIds))
+			: [];
+	const chatThreadIds = chatThreadRows.map((row) => row.id);
+
+	const chatMessageRows =
+		chatThreadIds.length > 0
+			? await db
+					.select({ id: chatMessages.id })
+					.from(chatMessages)
+					.where(inArray(chatMessages.threadId, chatThreadIds))
+			: [];
+
 	await db.transaction(async (tx) => {
+		if (chatThreadIds.length > 0) {
+			await tx
+				.delete(chatMessages)
+				.where(inArray(chatMessages.threadId, chatThreadIds));
+			await tx
+				.delete(chatThreads)
+				.where(inArray(chatThreads.id, chatThreadIds));
+		}
 		if (runIds.length > 0) {
 			await tx.delete(flashcards).where(inArray(flashcards.runId, runIds));
 		}
@@ -218,6 +247,8 @@ async function deleteSong(songId: number): Promise<void> {
 			translationLines: translationLineIds.length,
 			vocabEntries: vocabEntryRows.length,
 			flashcards: flashcardRows.length,
+			chatThreads: chatThreadRows.length,
+			chatMessages: chatMessageRows.length,
 		},
 	};
 

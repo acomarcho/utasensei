@@ -1,4 +1,4 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 import type {
 	FlashcardRun,
 	SongLesson,
@@ -6,7 +6,14 @@ import type {
 	SongPageData,
 } from "~/data/ai-studio";
 import { db } from "~/utils/db/client.server";
-import { flashcards, songs, translationRuns } from "~/utils/db/schema";
+import {
+	flashcards,
+	lyricLines,
+	songs,
+	translationLines,
+	translationRuns,
+	vocabEntries,
+} from "~/utils/db/schema";
 
 async function getLatestRun(songId: number) {
 	const [run] = await db
@@ -141,4 +148,67 @@ export async function getSongPageData(songId: number): Promise<SongPageData> {
 		songLesson,
 		flashcardRun,
 	};
+}
+
+export async function deleteSongById(
+	songId: number,
+): Promise<{ songId: number }> {
+	const [song] = await db
+		.select({ id: songs.id })
+		.from(songs)
+		.where(eq(songs.id, songId))
+		.limit(1);
+
+	if (!song) {
+		throw new Error(`Song id ${songId} not found.`);
+	}
+
+	const runRows = await db
+		.select({ id: translationRuns.id })
+		.from(translationRuns)
+		.where(eq(translationRuns.songId, songId));
+	const runIds = runRows.map((row) => row.id);
+
+	const lyricLineRows =
+		runIds.length > 0
+			? await db
+					.select({ id: lyricLines.id })
+					.from(lyricLines)
+					.where(inArray(lyricLines.runId, runIds))
+			: [];
+	const lyricLineIds = lyricLineRows.map((row) => row.id);
+
+	const translationLineRows =
+		lyricLineIds.length > 0
+			? await db
+					.select({ id: translationLines.id })
+					.from(translationLines)
+					.where(inArray(translationLines.lyricLineId, lyricLineIds))
+			: [];
+	const translationLineIds = translationLineRows.map((row) => row.id);
+
+	await db.transaction(async (tx) => {
+		if (runIds.length > 0) {
+			await tx.delete(flashcards).where(inArray(flashcards.runId, runIds));
+		}
+		if (translationLineIds.length > 0) {
+			await tx
+				.delete(vocabEntries)
+				.where(inArray(vocabEntries.translationLineId, translationLineIds));
+		}
+		if (lyricLineIds.length > 0) {
+			await tx
+				.delete(translationLines)
+				.where(inArray(translationLines.lyricLineId, lyricLineIds));
+		}
+		if (runIds.length > 0) {
+			await tx.delete(lyricLines).where(inArray(lyricLines.runId, runIds));
+			await tx
+				.delete(translationRuns)
+				.where(eq(translationRuns.songId, songId));
+		}
+		await tx.delete(songs).where(eq(songs.id, songId));
+	});
+
+	return { songId };
 }

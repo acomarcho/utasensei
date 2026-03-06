@@ -1,5 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getSongPageData, listSongsForLibrary } from "~/utils/songs.server";
+import {
+	deleteSongById,
+	getSongPageData,
+	listSongsForLibrary,
+} from "~/utils/songs.server";
 
 export const getSongsListFn = createServerFn({ method: "GET" }).handler(
 	async () => {
@@ -11,4 +15,10 @@ export const getSongPageDataFn = createServerFn({ method: "GET" })
 	.inputValidator((data: { songId: number }) => data)
 	.handler(async ({ data }) => {
 		return getSongPageData(data.songId);
+	});
+
+export const deleteSongFn = createServerFn({ method: "POST" })
+	.inputValidator((data: { songId: number }) => data)
+	.handler(async ({ data }) => {
+		return deleteSongById(data.songId);
 	});

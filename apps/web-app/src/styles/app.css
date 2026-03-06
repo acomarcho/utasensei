@@ -20,6 +20,9 @@
   --border-radius: 0px;
   --shadow-color: #ff8c00;
   --shadow-offset: 4px;
+  --bg-danger: #d84b35;
+  --text-on-danger: #f4f1ea;
+  --shadow-danger: #d84b35;
 }
 
 .neo-app {
@@ -71,6 +74,22 @@
 .neo-button:active {
   transform: translate(var(--shadow-offset), var(--shadow-offset));
   box-shadow: 0px 0px 0px 0px var(--shadow-color);
+}
+
+.neo-button-danger {
+  background-color: var(--bg-danger);
+  color: var(--text-on-danger);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-offset) var(--shadow-offset) 0px 0px var(--shadow-danger);
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.neo-button-danger:active {
+  transform: translate(var(--shadow-offset), var(--shadow-offset));
+  box-shadow: 0px 0px 0px 0px var(--shadow-danger);
 }
 
 .neo-input {
@@ -182,6 +201,12 @@ button.neo-button:not(:disabled):hover,
 a.neo-button:hover {
   transform: translate(-2px, -2px);
   box-shadow: calc(var(--shadow-offset) + 2px) calc(var(--shadow-offset) + 2px) 0px 0px var(--shadow-color);
+}
+
+button.neo-button-danger:not(:disabled):hover,
+a.neo-button-danger:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: calc(var(--shadow-offset) + 2px) calc(var(--shadow-offset) + 2px) 0px 0px var(--shadow-danger);
 }
 
 .flashcard-draggable {

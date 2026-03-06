@@ -1,17 +1,10 @@
 import {
-	AnimatePresence,
-	motion,
-	useMotionValue,
-	useTransform,
-} from "motion/react";
-import {
 	Link,
 	Outlet,
 	useLocation,
 	useNavigate,
 	useRouter,
 } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	ArrowRight,
 	BookOpen,
@@ -23,15 +16,24 @@ import {
 	RotateCcw,
 	Search,
 	Sparkles,
+	Trash2,
 	X,
 } from "lucide-react";
+import {
+	AnimatePresence,
+	motion,
+	useMotionValue,
+	useTransform,
+} from "motion/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { NotFound } from "~/components/NotFound";
 import type {
 	Flashcard,
 	FlashcardRun,
 	SongLesson,
 	SongListItem,
 } from "~/data/ai-studio";
-import { NotFound } from "~/components/NotFound";
+import { deleteSongFn } from "~/utils/songs.functions";
 
 const REVIEW_STACK_LIMIT = 5;
 const REVIEW_SWIPE_MS = 280;
@@ -61,6 +63,18 @@ function parseCardFace(raw: string): ParsedCardFace {
 	}
 
 	return parsedFace;
+}
+
+function formatSourceLabel(sourceUrl: string): string {
+	if (!sourceUrl) {
+		return "Source";
+	}
+
+	try {
+		return new URL(sourceUrl).hostname.replace(/^www\./, "");
+	} catch {
+		return "Source";
+	}
 }
 
 function SidebarContent({
@@ -911,6 +925,111 @@ export function NewSongPage() {
 	);
 }
 
+function DeleteSongModal({
+	errorMessage,
+	isDeleting,
+	isOpen,
+	onCancel,
+	onConfirm,
+	songTitle,
+}: {
+	errorMessage: string | null;
+	isDeleting: boolean;
+	isOpen: boolean;
+	onCancel: () => void;
+	onConfirm: () => void;
+	songTitle: string;
+}) {
+	return (
+		<AnimatePresence>
+			{isOpen && (
+				<motion.div
+					animate={{ opacity: 1 }}
+					className="neo-review-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4"
+					exit={{ opacity: 0 }}
+					initial={{ opacity: 0 }}
+				>
+					<button
+						aria-label="Close delete confirmation"
+						className="absolute inset-0"
+						disabled={isDeleting}
+						onClick={onCancel}
+						type="button"
+					/>
+					<motion.div
+						animate={{ opacity: 1, scale: 1, y: 0 }}
+						className="neo-card-no-hover relative z-10 w-full max-w-xl overflow-hidden bg-[var(--bg-app)]"
+						exit={{ opacity: 0, scale: 0.96, y: 20 }}
+						initial={{ opacity: 0, scale: 0.94, y: 28 }}
+						transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+					>
+						<div className="neo-border-b flex items-start justify-between gap-4 p-5 md:p-6">
+							<div className="flex min-w-0 items-start gap-4">
+								<div className="neo-button-danger flex h-12 w-12 shrink-0 items-center justify-center">
+									<Trash2 className="h-5 w-5" />
+								</div>
+								<div className="min-w-0">
+									<p className="text-[11px] font-bold uppercase tracking-[0.2em] neo-text-muted">
+										Delete song
+									</p>
+									<h3 className="neo-wrap-anywhere mt-2 text-3xl font-bold uppercase tracking-[-0.05em]">
+										Delete this lesson?
+									</h3>
+								</div>
+							</div>
+							<button
+								className="neo-card-no-hover shrink-0 p-2.5 hover:bg-[var(--bg-card-hover)]"
+								disabled={isDeleting}
+								onClick={onCancel}
+								type="button"
+							>
+								<X className="h-5 w-5" />
+							</button>
+						</div>
+
+						<div className="space-y-4 p-5 md:p-6">
+							<p className="font-mono text-sm leading-relaxed neo-text-muted md:text-base">
+								This removes{" "}
+								<span className="font-bold text-[var(--text-main)]">
+									{songTitle}
+								</span>{" "}
+								and its lyrics, translations, vocabulary notes, and flashcards.
+							</p>
+							<p className="neo-border bg-[var(--bg-card-hover)] px-3 py-3 text-[11px] font-bold uppercase tracking-[0.16em] neo-text-muted">
+								This action cannot be undone.
+							</p>
+							{errorMessage ? (
+								<p className="neo-border bg-red-50 px-3 py-3 text-sm font-mono text-red-700">
+									{errorMessage}
+								</p>
+							) : null}
+						</div>
+
+						<div className="neo-border-t flex flex-col gap-3 p-5 md:flex-row md:justify-end md:p-6">
+							<button
+								className="neo-card-no-hover px-5 py-3 font-bold uppercase tracking-[0.18em] hover:bg-[var(--bg-card-hover)] disabled:opacity-60"
+								disabled={isDeleting}
+								onClick={onCancel}
+								type="button"
+							>
+								Cancel
+							</button>
+							<button
+								className="neo-button-danger px-5 py-3 uppercase tracking-[0.18em] disabled:cursor-not-allowed disabled:opacity-60"
+								disabled={isDeleting}
+								onClick={onConfirm}
+								type="button"
+							>
+								{isDeleting ? "Deleting..." : "Delete song"}
+							</button>
+						</div>
+					</motion.div>
+				</motion.div>
+			)}
+		</AnimatePresence>
+	);
+}
+
 export function SongDetailPage({
 	flashcardRun,
 	songLesson,
@@ -924,6 +1043,9 @@ export function SongDetailPage({
 	);
 	const [expandedLines, setExpandedLines] = useState<Set<number>>(new Set());
 	const [isReviewOpen, setIsReviewOpen] = useState(false);
+	const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+	const [isDeletingSong, setIsDeletingSong] = useState(false);
+	const [deleteError, setDeleteError] = useState<string | null>(null);
 	const [reviewLeft, setReviewLeft] = useState<Flashcard[]>(
 		() => safeFlashcardRun.cards,
 	);
@@ -934,10 +1056,19 @@ export function SongDetailPage({
 		null,
 	);
 	const reviewTimeoutRef = useRef<number | null>(null);
+	const navigate = useNavigate();
+	const router = useRouter();
+	const sourceLabel = useMemo(
+		() => formatSourceLabel(songLesson?.run.sourceUrl ?? ""),
+		[songLesson?.run.sourceUrl],
+	);
 
 	useEffect(() => {
 		setExpandedLines(new Set());
 		setIsReviewOpen(false);
+		setIsDeleteConfirmOpen(false);
+		setIsDeletingSong(false);
+		setDeleteError(null);
 		setReviewLeft(safeFlashcardRun.cards);
 		setRememberedCardIds([]);
 		setForgottenCount(0);
@@ -954,7 +1085,7 @@ export function SongDetailPage({
 	}, []);
 
 	useEffect(() => {
-		if (!isReviewOpen) {
+		if (!isReviewOpen && !isDeleteConfirmOpen) {
 			return;
 		}
 
@@ -962,9 +1093,18 @@ export function SongDetailPage({
 		document.body.style.overflow = "hidden";
 
 		const handleKeyDown = (event: KeyboardEvent) => {
-			if (event.key === "Escape") {
-				setIsReviewOpen(false);
+			if (event.key !== "Escape") {
+				return;
 			}
+
+			if (isDeleteConfirmOpen) {
+				if (!isDeletingSong) {
+					setIsDeleteConfirmOpen(false);
+				}
+				return;
+			}
+
+			setIsReviewOpen(false);
 		};
 
 		window.addEventListener("keydown", handleKeyDown);
@@ -973,7 +1113,7 @@ export function SongDetailPage({
 			document.body.style.overflow = previousOverflow;
 			window.removeEventListener("keydown", handleKeyDown);
 		};
-	}, [isReviewOpen]);
+	}, [isDeleteConfirmOpen, isDeletingSong, isReviewOpen]);
 
 	if (!songLesson) {
 		return (
@@ -1036,6 +1176,28 @@ export function SongDetailPage({
 		setIsCardFlipped(false);
 	};
 
+	async function handleDeleteSong() {
+		if (!songLesson || isDeletingSong) {
+			return;
+		}
+
+		setDeleteError(null);
+		setIsDeletingSong(true);
+
+		try {
+			await deleteSongFn({ data: { songId: songLesson.song.id } });
+			await navigate({ to: "/" });
+			await router.invalidate();
+		} catch (error) {
+			setDeleteError(
+				error instanceof Error
+					? error.message
+					: "Song deletion failed. Please try again.",
+			);
+			setIsDeletingSong(false);
+		}
+	}
+
 	return (
 		<>
 			<div className="p-4 md:p-8 lg:p-12">
@@ -1051,7 +1213,7 @@ export function SongDetailPage({
 								</p>
 							</div>
 
-							<div className="flex w-full max-w-[320px] flex-col gap-3 md:items-end">
+							<div className="flex w-full max-w-[360px] flex-col gap-3 md:items-end">
 								<button
 									className="neo-button px-4 py-2 text-left text-sm uppercase tracking-[0.16em] md:text-center"
 									onClick={() => setIsReviewOpen(true)}
@@ -1059,8 +1221,21 @@ export function SongDetailPage({
 								>
 									Review {safeFlashcardRun.count} flashcards
 								</button>
-								<div className="neo-card-no-hover px-4 py-2 text-sm font-bold uppercase neo-text-muted md:self-auto">
-									Source: Genius
+								<div className="flex w-full items-stretch gap-3 md:w-auto md:self-end">
+									<div className="neo-card-no-hover flex min-w-0 items-center self-start px-4 py-2 text-sm font-bold uppercase neo-text-muted md:flex-none">
+										<span className="truncate">Source: {sourceLabel}</span>
+									</div>
+									<button
+										aria-label="Delete song"
+										className="neo-button-danger flex shrink-0 items-center justify-center px-3"
+										onClick={() => {
+											setDeleteError(null);
+											setIsDeleteConfirmOpen(true);
+										}}
+										type="button"
+									>
+										<Trash2 className="h-5 w-5" />
+									</button>
 								</div>
 							</div>
 						</div>
@@ -1168,6 +1343,19 @@ export function SongDetailPage({
 				songTitle={songLesson.song.title}
 				swipeDirection={swipeDirection}
 				totalCards={safeFlashcardRun.count}
+			/>
+			<DeleteSongModal
+				errorMessage={deleteError}
+				isDeleting={isDeletingSong}
+				isOpen={isDeleteConfirmOpen}
+				onCancel={() => {
+					if (isDeletingSong) {
+						return;
+					}
+					setIsDeleteConfirmOpen(false);
+				}}
+				onConfirm={() => void handleDeleteSong()}
+				songTitle={songLesson.song.title}
 			/>
 		</>
 	);

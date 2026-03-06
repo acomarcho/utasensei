@@ -12,7 +12,8 @@
 		"format": "biome format . --write",
 		"db:generate": "pnpm --filter @utasensei/cli db:generate",
 		"db:push": "pnpm --filter @utasensei/cli db:push",
-		"prepare": "lefthook install"
+		"prepare": "lefthook install",
+		"web-app": "pnpm --filter ./apps/web-app dev"
 	},
 	"engines": {
 		"node": ">=22.0.0",

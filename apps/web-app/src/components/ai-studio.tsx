@@ -318,6 +318,76 @@ function SidebarContent({
 	selectedSongId: number | null;
 	songsList: SongListItem[];
 }) {
+	const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+	const [scrollIndicator, setScrollIndicator] = useState({
+		hasOverflow: false,
+		thumbHeight: 0,
+		thumbTop: 0,
+	});
+
+	const updateScrollIndicator = useCallback(() => {
+		const node = scrollAreaRef.current;
+		if (!node) {
+			return;
+		}
+
+		const { clientHeight, scrollHeight, scrollTop } = node;
+		const hasOverflow = scrollHeight > clientHeight + 1;
+
+		if (!hasOverflow) {
+			setScrollIndicator({ hasOverflow: false, thumbHeight: 0, thumbTop: 0 });
+			return;
+		}
+
+		const thumbHeight = Math.max(
+			28,
+			(clientHeight * clientHeight) / scrollHeight,
+		);
+		const maxThumbTop = clientHeight - thumbHeight;
+		const maxScrollTop = scrollHeight - clientHeight;
+		const thumbTop =
+			maxScrollTop <= 0 ? 0 : (scrollTop / maxScrollTop) * maxThumbTop;
+
+		setScrollIndicator({
+			hasOverflow: true,
+			thumbHeight,
+			thumbTop,
+		});
+	}, []);
+
+	useEffect(() => {
+		updateScrollIndicator();
+	});
+
+	useEffect(() => {
+		const node = scrollAreaRef.current;
+		if (!node) {
+			return;
+		}
+
+		const handleResize = () => {
+			updateScrollIndicator();
+		};
+
+		window.addEventListener("resize", handleResize);
+
+		if (typeof ResizeObserver !== "undefined") {
+			const resizeObserver = new ResizeObserver(() => {
+				updateScrollIndicator();
+			});
+			resizeObserver.observe(node);
+
+			return () => {
+				window.removeEventListener("resize", handleResize);
+				resizeObserver.disconnect();
+			};
+		}
+
+		return () => {
+			window.removeEventListener("resize", handleResize);
+		};
+	}, [updateScrollIndicator]);
+
 	return (
 		<>
 			<div className="neo-border-b flex items-center justify-between p-6">
@@ -330,36 +400,58 @@ function SidebarContent({
 				</button>
 			</div>
 
-			<div className="flex-1 overflow-y-auto p-4">
-				<h2 className="mb-4 text-sm font-bold tracking-widest uppercase neo-text-muted">
-					Your Library
-				</h2>
-				<div className="space-y-3">
-					{songsList.map((song) => (
-						<Link
-							className={`flex w-full items-center gap-3 p-3 text-left ${
-								selectedSongId === song.id
-									? "neo-card"
-									: "neo-card-no-hover opacity-80 hover:opacity-100"
-							}`}
-							key={song.id}
-							onClick={onClose}
-							params={{ songId: String(song.id) }}
-							to="/song/$songId"
-						>
-							<div className="neo-border flex h-10 w-10 shrink-0 items-center justify-center bg-[var(--bg-accent)]">
-								<Play className="ml-1 h-5 w-5 text-[var(--text-on-accent)]" />
-							</div>
-							<div className="overflow-hidden">
-								<p className="truncate font-bold">{song.title}</p>
-								<p className="truncate text-xs neo-text-muted">{song.artist}</p>
-							</div>
-						</Link>
-					))}
+			<div className="relative min-h-0 flex-1">
+				<div
+					className="neo-scrollbar-hidden h-full min-h-0 overflow-y-auto p-4 pr-5"
+					onScroll={updateScrollIndicator}
+					ref={scrollAreaRef}
+				>
+					<h2 className="mb-4 text-sm font-bold tracking-widest uppercase neo-text-muted">
+						Your Library
+					</h2>
+					<div className="space-y-3">
+						{songsList.map((song) => (
+							<Link
+								className={`flex w-full items-center gap-3 p-3 text-left ${
+									selectedSongId === song.id
+										? "neo-card"
+										: "neo-card-no-hover opacity-80 hover:opacity-100"
+								}`}
+								key={song.id}
+								onClick={onClose}
+								params={{ songId: String(song.id) }}
+								to="/song/$songId"
+							>
+								<div className="neo-border flex h-10 w-10 shrink-0 items-center justify-center bg-[var(--bg-accent)]">
+									<Play className="ml-1 h-5 w-5 text-[var(--text-on-accent)]" />
+								</div>
+								<div className="overflow-hidden">
+									<p className="truncate font-bold">{song.title}</p>
+									<p className="truncate text-xs neo-text-muted">
+										{song.artist}
+									</p>
+								</div>
+							</Link>
+						))}
+					</div>
 				</div>
+				{scrollIndicator.hasOverflow ? (
+					<div
+						aria-hidden="true"
+						className="neo-sidebar-scroll-rail absolute right-1.5 top-4 bottom-4 z-0 w-[3px]"
+					>
+						<div
+							className="neo-sidebar-scroll-thumb w-full"
+							style={{
+								height: `${scrollIndicator.thumbHeight}px`,
+								transform: `translateY(${scrollIndicator.thumbTop}px)`,
+							}}
+						/>
+					</div>
+				) : null}
 			</div>
 
-			<div className="neo-border-t p-4">
+			<div className="neo-border-t relative z-10 bg-[var(--bg-sidebar)] p-4">
 				<Link
 					className="neo-button flex w-full items-center justify-center gap-2 py-3"
 					onClick={onClose}

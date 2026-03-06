@@ -134,6 +134,28 @@
   pointer-events: none;
 }
 
+.neo-scrollbar-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.neo-scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+.neo-sidebar-scroll-rail {
+  pointer-events: none;
+  background: rgb(0 0 0 / 0.08);
+  border-radius: 9999px;
+}
+
+.neo-sidebar-scroll-thumb {
+  background: rgb(0 0 0 / 0.28);
+  border-radius: 9999px;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.14);
+  transition: transform 120ms ease-out, height 120ms ease-out;
+}
+
 .flashcard-scene {
   perspective: 1800px;
 }

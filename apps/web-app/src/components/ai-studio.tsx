@@ -4,8 +4,14 @@ import {
 	useMotionValue,
 	useTransform,
 } from "motion/react";
-import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+	Link,
+	Outlet,
+	useLocation,
+	useNavigate,
+	useRouter,
+} from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	ArrowRight,
 	BookOpen,
@@ -700,22 +706,122 @@ export function AiStudioShell({ songsList }: { songsList: SongListItem[] }) {
 
 export function NewSongPage() {
 	const [urlInput, setUrlInput] = useState("");
+	const [isGenerating, setIsGenerating] = useState(false);
+	const [statusMessages, setStatusMessages] = useState<
+		Array<{ id: string; message: string }>
+	>([]);
+	const [generationError, setGenerationError] = useState<string | null>(null);
+	const generationSourceRef = useRef<EventSource | null>(null);
 	const navigate = useNavigate();
+	const router = useRouter();
+	const latestStatus =
+		statusMessages[statusMessages.length - 1]?.message ?? null;
 
-	const handleGenerate = () => {
-		if (!urlInput.trim()) {
+	const handleGenerate = useCallback(async () => {
+		const nextUrl = urlInput.trim();
+		if (!nextUrl || isGenerating) {
 			return;
 		}
 
-		navigate({ params: { songId: "1" }, to: "/song/$songId" });
-		setUrlInput("");
-	};
+		generationSourceRef.current?.close();
+		setIsGenerating(true);
+		setGenerationError(null);
+		setStatusMessages([]);
+
+		try {
+			const endpoint = `/api/generate-song-progress?${new URLSearchParams({
+				url: nextUrl,
+			}).toString()}`;
+
+			await new Promise<void>((resolve) => {
+				const source = new EventSource(endpoint);
+				generationSourceRef.current = source;
+				let settled = false;
+
+				const cleanup = () => {
+					source.close();
+					if (generationSourceRef.current === source) {
+						generationSourceRef.current = null;
+					}
+				};
+
+				const finish = () => {
+					if (settled) {
+						return;
+					}
+
+					settled = true;
+					cleanup();
+					resolve();
+				};
+
+				source.addEventListener("progress", (event) => {
+					const payload = JSON.parse((event as MessageEvent<string>).data) as {
+						message: string;
+						step: string;
+					};
+					setStatusMessages((currentValue) => [
+						...currentValue,
+						{ id: crypto.randomUUID(), message: payload.message },
+					]);
+				});
+
+				source.addEventListener("done", async (event) => {
+					const payload = JSON.parse((event as MessageEvent<string>).data) as {
+						flashcardCount: number;
+						runId: number;
+						songId: number;
+					};
+					setIsGenerating(false);
+					setUrlInput("");
+					await navigate({
+						params: { songId: String(payload.songId) },
+						to: "/song/$songId",
+					});
+					await router.invalidate();
+					finish();
+				});
+
+				source.addEventListener("generation-error", (event) => {
+					const payload = JSON.parse((event as MessageEvent<string>).data) as {
+						message: string;
+					};
+					setGenerationError(payload.message);
+					setIsGenerating(false);
+					finish();
+				});
+
+				source.onerror = (_event) => {
+					if (settled) {
+						return;
+					}
+
+					setGenerationError("SSE connection failed. Please try again.");
+					setIsGenerating(false);
+					finish();
+				};
+			});
+		} catch (error) {
+			setGenerationError(
+				error instanceof Error
+					? error.message
+					: "Song generation failed. Please try again.",
+			);
+			setIsGenerating(false);
+		}
+	}, [isGenerating, navigate, router, urlInput]);
+
+	useEffect(() => {
+		return () => {
+			generationSourceRef.current?.close();
+		};
+	}, []);
 
 	return (
 		<div className="p-4 md:p-8 lg:p-12">
 			<div className="mx-auto max-w-4xl">
 				<div className="flex min-h-[70vh] flex-col items-center justify-center space-y-8 text-center">
-					<div className="relative">
+					<div className="relative w-full max-w-3xl">
 						<div className="neo-border absolute -inset-4 z-0 rotate-2 bg-[var(--bg-accent)]" />
 						<div className="neo-card-no-hover relative z-10 bg-[var(--bg-card)] p-8 md:p-12">
 							<h2 className="mb-4 text-4xl font-bold tracking-tighter uppercase md:text-6xl">
@@ -727,22 +833,83 @@ export function NewSongPage() {
 								Paste a URL to generate a lesson.
 							</p>
 
-							<div className="flex flex-col gap-4 md:flex-row">
+							<form
+								className="flex flex-col gap-4 md:flex-row"
+								onSubmit={(event) => {
+									event.preventDefault();
+									void handleGenerate();
+								}}
+							>
 								<input
-									className="neo-input flex-1 text-lg font-mono"
+									aria-busy={isGenerating}
+									className="neo-input flex-1 text-lg font-mono disabled:cursor-not-allowed disabled:opacity-60"
+									disabled={isGenerating}
 									onChange={(event) => setUrlInput(event.target.value)}
 									placeholder="e.g. https://genius.com/..."
 									type="text"
 									value={urlInput}
 								/>
 								<button
-									className="neo-button flex items-center justify-center gap-2 px-8 py-4 text-lg"
-									onClick={handleGenerate}
-									type="button"
+									className="neo-button flex items-center justify-center gap-2 px-8 py-4 text-lg disabled:cursor-not-allowed disabled:opacity-60"
+									disabled={isGenerating}
+									type="submit"
 								>
-									Generate <ArrowRight className="h-5 w-5" />
+									{isGenerating ? (
+										"Generating..."
+									) : (
+										<>
+											Generate <ArrowRight className="h-5 w-5" />
+										</>
+									)}
 								</button>
-							</div>
+							</form>
+
+							{(isGenerating ||
+								statusMessages.length > 0 ||
+								generationError) && (
+								<div className="neo-card-no-hover mt-6 overflow-hidden text-left">
+									<div className="neo-border-b flex items-center justify-between gap-3 px-4 py-3">
+										<p className="text-xs font-bold tracking-[0.18em] uppercase neo-text-muted">
+											Generation Progress
+										</p>
+										{latestStatus && (
+											<p className="text-xs font-mono neo-text-muted">
+												{latestStatus}
+											</p>
+										)}
+									</div>
+									<div className="space-y-3 p-4">
+										{statusMessages.map((statusMessage, index) => {
+											const isActive =
+												index === statusMessages.length - 1 && isGenerating;
+											return (
+												<div
+													className="flex items-center gap-3"
+													key={statusMessage.id}
+												>
+													<div
+														className={`neo-border flex h-8 w-8 shrink-0 items-center justify-center text-xs font-bold ${
+															isActive
+																? "bg-[var(--bg-accent)] text-[var(--text-on-accent)]"
+																: "bg-[var(--bg-app)] neo-text-muted"
+														}`}
+													>
+														{index + 1}
+													</div>
+													<p className="min-w-0 text-sm font-mono leading-relaxed neo-text-muted">
+														{statusMessage.message}
+													</p>
+												</div>
+											);
+										})}
+										{generationError && (
+											<p className="neo-border bg-red-50 px-3 py-3 text-sm font-mono text-red-700">
+												{generationError}
+											</p>
+										)}
+									</div>
+								</div>
+							)}
 						</div>
 					</div>
 				</div>

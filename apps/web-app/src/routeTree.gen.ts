@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SongSongIdRouteImport } from './routes/song.$songId'
+import { Route as ApiGenerateSongProgressRouteImport } from './routes/api.generate-song-progress'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,30 +23,39 @@ const SongSongIdRoute = SongSongIdRouteImport.update({
   path: '/song/$songId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiGenerateSongProgressRoute = ApiGenerateSongProgressRouteImport.update({
+  id: '/api/generate-song-progress',
+  path: '/api/generate-song-progress',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/generate-song-progress': typeof ApiGenerateSongProgressRoute
   '/song/$songId': typeof SongSongIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/generate-song-progress': typeof ApiGenerateSongProgressRoute
   '/song/$songId': typeof SongSongIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/generate-song-progress': typeof ApiGenerateSongProgressRoute
   '/song/$songId': typeof SongSongIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/song/$songId'
+  fullPaths: '/' | '/api/generate-song-progress' | '/song/$songId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/song/$songId'
-  id: '__root__' | '/' | '/song/$songId'
+  to: '/' | '/api/generate-song-progress' | '/song/$songId'
+  id: '__root__' | '/' | '/api/generate-song-progress' | '/song/$songId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiGenerateSongProgressRoute: typeof ApiGenerateSongProgressRoute
   SongSongIdRoute: typeof SongSongIdRoute
 }
 
@@ -65,11 +75,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SongSongIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/generate-song-progress': {
+      id: '/api/generate-song-progress'
+      path: '/api/generate-song-progress'
+      fullPath: '/api/generate-song-progress'
+      preLoaderRoute: typeof ApiGenerateSongProgressRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiGenerateSongProgressRoute: ApiGenerateSongProgressRoute,
   SongSongIdRoute: SongSongIdRoute,
 }
 export const routeTree = rootRouteImport

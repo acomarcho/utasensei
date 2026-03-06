@@ -11,17 +11,22 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@ai-sdk/fireworks": "^2.0.36",
 		"@libsql/client": "^0.17.0",
 		"@tanstack/react-router": "^1.166.2",
 		"@tanstack/react-router-devtools": "^1.166.2",
 		"@tanstack/react-start": "^1.166.2",
+		"ai": "^6.0.105",
+		"chromium-bidi": "^15.0.0",
+		"dotenv": "^17.3.1",
 		"drizzle-orm": "^0.45.1",
 		"lucide-react": "^0.546.0",
 		"motion": "^12.35.0",
+		"playwright": "^1.58.2",
 		"react": "^19.0.0",
 		"react-dom": "^19.0.0",
 		"tailwind-merge": "^2.6.0",
-		"zod": "^3.24.2"
+		"zod": "^4.3.6"
 	},
 	"devDependencies": {
 		"@tailwindcss/vite": "^4.1.18",

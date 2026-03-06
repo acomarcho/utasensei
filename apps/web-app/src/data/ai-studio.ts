@@ -54,3 +54,35 @@ export type SongPageData = {
 	songLesson: SongLesson | null;
 	flashcardRun: FlashcardRun | null;
 };
+
+export type SongGenerationStep =
+	| "fetching_song_lyrics"
+	| "generating_translation"
+	| "generating_explanations"
+	| "generating_flashcards";
+
+export type SongGenerationStatusEvent = {
+	message: string;
+	step: SongGenerationStep;
+	timestamp: number;
+	type: "status";
+};
+
+export type SongGenerationDoneEvent = {
+	flashcardCount: number;
+	runId: number;
+	songId: number;
+	timestamp: number;
+	type: "done";
+};
+
+export type SongGenerationErrorEvent = {
+	message: string;
+	timestamp: number;
+	type: "error";
+};
+
+export type SongGenerationStreamEvent =
+	| SongGenerationStatusEvent
+	| SongGenerationDoneEvent
+	| SongGenerationErrorEvent;

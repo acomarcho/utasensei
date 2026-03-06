@@ -868,15 +868,10 @@ export function NewSongPage() {
 								statusMessages.length > 0 ||
 								generationError) && (
 								<div className="neo-card-no-hover mt-6 overflow-hidden text-left">
-									<div className="neo-border-b flex items-center justify-between gap-3 px-4 py-3">
+									<div className="neo-border-b px-4 py-3">
 										<p className="text-xs font-bold tracking-[0.18em] uppercase neo-text-muted">
 											Generation Progress
 										</p>
-										{latestStatus && (
-											<p className="text-xs font-mono neo-text-muted">
-												{latestStatus}
-											</p>
-										)}
 									</div>
 									<div className="space-y-3 p-4">
 										{statusMessages.map((statusMessage, index) => {

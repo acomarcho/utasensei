@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SongSongIdRouteImport } from './routes/song.$songId'
 import { Route as ApiGenerateSongProgressRouteImport } from './routes/api.generate-song-progress'
+import { Route as SongSongIdMockChatRouteImport } from './routes/song.$songId_.mock-chat'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,35 +29,57 @@ const ApiGenerateSongProgressRoute = ApiGenerateSongProgressRouteImport.update({
   path: '/api/generate-song-progress',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SongSongIdMockChatRoute = SongSongIdMockChatRouteImport.update({
+  id: '/song/$songId_/mock-chat',
+  path: '/song/$songId/mock-chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/generate-song-progress': typeof ApiGenerateSongProgressRoute
   '/song/$songId': typeof SongSongIdRoute
+  '/song/$songId/mock-chat': typeof SongSongIdMockChatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/generate-song-progress': typeof ApiGenerateSongProgressRoute
   '/song/$songId': typeof SongSongIdRoute
+  '/song/$songId/mock-chat': typeof SongSongIdMockChatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/generate-song-progress': typeof ApiGenerateSongProgressRoute
   '/song/$songId': typeof SongSongIdRoute
+  '/song/$songId_/mock-chat': typeof SongSongIdMockChatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/generate-song-progress' | '/song/$songId'
+  fullPaths:
+    | '/'
+    | '/api/generate-song-progress'
+    | '/song/$songId'
+    | '/song/$songId/mock-chat'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/generate-song-progress' | '/song/$songId'
-  id: '__root__' | '/' | '/api/generate-song-progress' | '/song/$songId'
+  to:
+    | '/'
+    | '/api/generate-song-progress'
+    | '/song/$songId'
+    | '/song/$songId/mock-chat'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/generate-song-progress'
+    | '/song/$songId'
+    | '/song/$songId_/mock-chat'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiGenerateSongProgressRoute: typeof ApiGenerateSongProgressRoute
   SongSongIdRoute: typeof SongSongIdRoute
+  SongSongIdMockChatRoute: typeof SongSongIdMockChatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +105,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiGenerateSongProgressRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/song/$songId_/mock-chat': {
+      id: '/song/$songId_/mock-chat'
+      path: '/song/$songId/mock-chat'
+      fullPath: '/song/$songId/mock-chat'
+      preLoaderRoute: typeof SongSongIdMockChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +119,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiGenerateSongProgressRoute: ApiGenerateSongProgressRoute,
   SongSongIdRoute: SongSongIdRoute,
+  SongSongIdMockChatRoute: SongSongIdMockChatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

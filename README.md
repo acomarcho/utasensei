@@ -69,7 +69,7 @@ Main entrypoint:
 
 Core modules:
 
-- `apps/cli/src/lib/clean-html.ts`
+- `apps/cli/src/lib/markdown-source.ts`
 - `apps/cli/src/commands/extract-html.ts`
 - `apps/cli/src/commands/translate-song.ts`
 

@@ -22,7 +22,6 @@
 		"ai": "^6.0.105",
 		"dotenv": "^17.3.1",
 		"drizzle-orm": "^0.45.1",
-		"playwright": "^1.55.0",
 		"zod": "^4.3.6"
 	},
 	"devDependencies": {

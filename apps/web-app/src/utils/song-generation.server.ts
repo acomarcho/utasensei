@@ -4,11 +4,6 @@ import { stepCountIs, ToolLoopAgent, tool } from "ai";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { SongGenerationStreamEvent } from "~/data/ai-studio";
-import {
-	cleanHtmlTreeToYaml,
-	collectOrderedTextSegments,
-	extractCleanHtmlTree,
-} from "~/utils/clean-html.server";
 import { db } from "~/utils/db/client.server";
 import {
 	flashcards,
@@ -18,12 +13,12 @@ import {
 	translationRuns,
 	vocabEntries,
 } from "~/utils/db/schema";
+import { fetchMarkdownSource } from "~/utils/markdown-source.server";
 
 (globalThis as { AI_SDK_LOG_WARNINGS?: boolean }).AI_SDK_LOG_WARNINGS = false;
 
 const MODEL_ID = "accounts/fireworks/models/glm-5";
-const CLEAN_YAML_PROMPT_CHAR_LIMIT = 120_000;
-const TEXT_SEGMENT_LIMIT = 1_200;
+const SOURCE_MARKDOWN_PROMPT_CHAR_LIMIT = 140_000;
 
 const songMetadataSchema = z.object({
 	title: z.string(),
@@ -88,28 +83,6 @@ function formatGenerationError(error: unknown) {
 
 function normalizeLine(text: string): string {
 	return text.replace(/\s+/g, " ").trim();
-}
-
-function compactSegments(segments: string[], limit: number): string[] {
-	const out: string[] = [];
-
-	for (const raw of segments) {
-		const line = normalizeLine(raw);
-		if (!line) {
-			continue;
-		}
-
-		if (out[out.length - 1] === line) {
-			continue;
-		}
-
-		out.push(line);
-		if (out.length >= limit) {
-			break;
-		}
-	}
-
-	return out;
 }
 
 function truncateForPrompt(text: string, maxChars: number): string {
@@ -369,26 +342,21 @@ export async function generateSongFromUrl(
 	await reportStatus(
 		onProgress,
 		"fetching_song_lyrics",
-		"Fetching song lyrics...",
+		"Fetching markdown from markdown.new...",
 	);
 
-	const cleanTree = await extractCleanHtmlTree(url, {
-		maxDepth: 20,
-		maxNodes: 3000,
-	});
-	const cleanYaml = truncateForPrompt(
-		cleanHtmlTreeToYaml(cleanTree),
-		CLEAN_YAML_PROMPT_CHAR_LIMIT,
-	);
-	const textSegments = compactSegments(
-		collectOrderedTextSegments(cleanTree.nodes, TEXT_SEGMENT_LIMIT * 2),
-		TEXT_SEGMENT_LIMIT,
+	const source = await fetchMarkdownSource(url);
+	const sourceMarkdown = truncateForPrompt(
+		source.markdown,
+		SOURCE_MARKDOWN_PROMPT_CHAR_LIMIT,
 	);
 
-	logGenerationDebug("html_extracted", {
-		pageTitle: cleanTree.title,
-		pageUrl: cleanTree.url,
-		nodeCount: cleanTree.nodes.length,
+	logGenerationDebug("markdown_fetched", {
+		pageTitle: source.title,
+		pageUrl: source.sourceUrl,
+		markdownCharCount: source.markdown.length,
+		method: source.method,
+		tokens: source.tokens,
 	});
 
 	const state: TeachState = {
@@ -577,12 +545,8 @@ export async function generateSongFromUrl(
 		},
 	});
 
-	const indexedSegments = textSegments
-		.map((line, index) => `${index + 1}. ${line}`)
-		.join("\n");
-
 	const prompt = [
-		"Task: generate Japanese-learning output from this webpage structure.",
+		"Task: generate Japanese-learning output from this page markdown.",
 		"You must call tools in this order:",
 		"1) set_song_metadata_state",
 		"2) set_lyrics_lines_state",
@@ -640,14 +604,11 @@ export async function generateSongFromUrl(
 		"Good longFormExplanation: \"Nakanu is a literary/soft negative form related to nakanai (not cry). you ni means 'so that' or 'in order to'. As a chunk, nakanu you ni expresses purpose/prevention: doing something so crying does not happen.\"",
 		'Good vocabularies: [{"original":"nakanu","explanation":"negative form meaning \'not cry\'"},{"original":"you ni","explanation":"so that / in order to"}]',
 		"",
-		`Page URL: ${cleanTree.url}`,
-		`Page title: ${cleanTree.title}`,
+		`Page URL: ${source.sourceUrl}`,
+		`Page title: ${source.title}`,
 		"",
-		"Clean text fragments (ordered):",
-		indexedSegments,
-		"",
-		"Clean HTML YAML snapshot:",
-		cleanYaml,
+		"Source markdown:",
+		sourceMarkdown,
 	].join("\n");
 
 	logGenerationDebug("agent_generate_start", {
@@ -697,7 +658,7 @@ export async function generateSongFromUrl(
 		);
 	}
 
-	const saved = await saveGeneratedSong(state, cleanTree.url);
+	const saved = await saveGeneratedSong(state, source.sourceUrl);
 	state.dbSongId = saved.songId;
 	state.dbRunId = saved.runId;
 

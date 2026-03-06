@@ -52,8 +52,24 @@ import { deleteSongFn } from "~/utils/songs.functions";
 const REVIEW_STACK_LIMIT = 5;
 const REVIEW_SWIPE_MS = 280;
 const REVIEW_DRAG_THRESHOLD = 110;
+const EMPTY_SCROLL_INDICATOR = {
+	hasOverflow: false,
+	thumbHeight: 0,
+	thumbTop: 0,
+};
 
 type ReviewAction = "forgotten" | "remembered";
+
+function isSameScrollIndicator(
+	left: typeof EMPTY_SCROLL_INDICATOR,
+	right: typeof EMPTY_SCROLL_INDICATOR,
+) {
+	return (
+		left.hasOverflow === right.hasOverflow &&
+		left.thumbHeight === right.thumbHeight &&
+		left.thumbTop === right.thumbTop
+	);
+}
 
 type ParsedCardFace = {
 	Line?: string;
@@ -321,11 +337,12 @@ function SidebarContent({
 	songsList: SongListItem[];
 }) {
 	const scrollAreaRef = useRef<HTMLDivElement | null>(null);
-	const [scrollIndicator, setScrollIndicator] = useState({
-		hasOverflow: false,
-		thumbHeight: 0,
-		thumbTop: 0,
-	});
+	const [scrollIndicator, setScrollIndicator] = useState(
+		EMPTY_SCROLL_INDICATOR,
+	);
+	const scrollContentSignature = `${selectedSongId ?? "none"}:${songsList
+		.map((song) => `${song.id}:${song.title}:${song.artist}`)
+		.join("|")}`;
 
 	const updateScrollIndicator = useCallback(() => {
 		const node = scrollAreaRef.current;
@@ -337,7 +354,11 @@ function SidebarContent({
 		const hasOverflow = scrollHeight > clientHeight + 1;
 
 		if (!hasOverflow) {
-			setScrollIndicator({ hasOverflow: false, thumbHeight: 0, thumbTop: 0 });
+			setScrollIndicator((currentIndicator) =>
+				currentIndicator.hasOverflow
+					? EMPTY_SCROLL_INDICATOR
+					: currentIndicator,
+			);
 			return;
 		}
 
@@ -350,16 +371,23 @@ function SidebarContent({
 		const thumbTop =
 			maxScrollTop <= 0 ? 0 : (scrollTop / maxScrollTop) * maxThumbTop;
 
-		setScrollIndicator({
+		const nextIndicator = {
 			hasOverflow: true,
 			thumbHeight,
 			thumbTop,
-		});
+		};
+
+		setScrollIndicator((currentIndicator) =>
+			isSameScrollIndicator(currentIndicator, nextIndicator)
+				? currentIndicator
+				: nextIndicator,
+		);
 	}, []);
 
 	useEffect(() => {
+		void scrollContentSignature;
 		updateScrollIndicator();
-	});
+	}, [scrollContentSignature, updateScrollIndicator]);
 
 	useEffect(() => {
 		const node = scrollAreaRef.current;
@@ -1704,7 +1732,11 @@ export function SongDetailPage({
 				songTitle={songLesson.song.title}
 			/>
 			{showChatWidget ? (
-				<SongChat initialThreads={chatThreads} songId={songLesson.song.id} />
+				<SongChat
+					initialThreads={chatThreads}
+					key={songLesson.song.id}
+					songId={songLesson.song.id}
+				/>
 			) : null}
 		</>
 	);

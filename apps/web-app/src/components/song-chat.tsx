@@ -1,15 +1,6 @@
-import { useRouter } from "@tanstack/react-router";
-import {
-	ArrowLeft,
-	LoaderCircle,
-	MessageCircle,
-	Plus,
-	Send,
-	Trash2,
-	X,
-} from "lucide-react";
+import { ArrowLeft, MessageCircle, Plus, Send, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 import type {
@@ -64,25 +55,12 @@ function sortThreads(threads: SongChatThreadSummary[]) {
 	});
 }
 
-function upsertThreadSummary(
-	threads: SongChatThreadSummary[],
-	thread: SongChatThread,
-) {
-	const nextSummary: SongChatThreadSummary = {
-		id: thread.id,
-		title: thread.title,
-		createdAt: thread.createdAt,
-		updatedAt: thread.updatedAt,
-		messageCount: thread.messageCount,
-	};
-
-	return sortThreads([
-		nextSummary,
-		...threads.filter((existingThread) => existingThread.id !== thread.id),
-	]);
-}
-
-function toThreadSummary(thread: SongChatThread): SongChatThreadSummary {
+function toThreadSummary(
+	thread: Pick<
+		LocalResolvedThread,
+		"id" | "title" | "createdAt" | "updatedAt" | "messageCount"
+	>,
+): SongChatThreadSummary {
 	return {
 		id: thread.id,
 		title: thread.title,
@@ -92,14 +70,38 @@ function toThreadSummary(thread: SongChatThread): SongChatThreadSummary {
 	};
 }
 
-function toThreadSummaries(threads: SongChatThread[]): SongChatThreadSummary[] {
-	return threads.map(toThreadSummary);
-}
-
 function toThreadDetailsRecord(threads: SongChatThread[]) {
 	return Object.fromEntries(
 		threads.map((thread) => [thread.id, thread] as const),
 	);
+}
+
+function appendOptimisticExchange(
+	thread: LocalResolvedThread,
+	userMessage: LocalChatMessage,
+	assistantMessage: LocalChatMessage,
+): LocalResolvedThread {
+	return {
+		...thread,
+		messageCount: thread.messageCount + 2,
+		updatedAt: assistantMessage.createdAt,
+		messages: [...thread.messages, userMessage, assistantMessage],
+	};
+}
+
+function appendAssistantDelta(
+	thread: LocalResolvedThread,
+	assistantMessageId: string,
+	textDelta: string,
+): LocalResolvedThread {
+	return {
+		...thread,
+		messages: thread.messages.map((message) =>
+			message.id === assistantMessageId
+				? { ...message, content: `${message.content}${textDelta}` }
+				: message,
+		),
+	};
 }
 
 function buildDraftTitle(message: string) {
@@ -342,7 +344,6 @@ function Conversation({
 	activeTitle,
 	errorMessage,
 	isBusy,
-	isLoading,
 	onBack,
 	onSend,
 	thread,
@@ -350,22 +351,27 @@ function Conversation({
 	activeTitle: string;
 	errorMessage: string | null;
 	isBusy: boolean;
-	isLoading: boolean;
 	onBack: () => void;
 	onSend: (message: string) => Promise<void>;
 	thread: DraftChatThread | LocalResolvedThread | null;
 }) {
 	const [input, setInput] = useState("");
 	const endRef = useRef<HTMLDivElement | null>(null);
+	const lastMessage = thread?.messages.at(-1) ?? null;
+	const scrollSignature = `${thread?.id ?? "none"}:${thread?.messages.length ?? 0}:${lastMessage?.id ?? "none"}:${lastMessage?.content.length ?? 0}`;
+	const previousScrollSignatureRef = useRef(scrollSignature);
 
-	useEffect(() => {
-		endRef.current?.scrollIntoView({ behavior: "smooth" });
-	});
+	if (scrollSignature !== previousScrollSignatureRef.current) {
+		previousScrollSignatureRef.current = scrollSignature;
+		queueMicrotask(() => {
+			endRef.current?.scrollIntoView({ behavior: "smooth" });
+		});
+	}
 
 	async function handleSubmit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		const nextMessage = input.trim();
-		if (!nextMessage || isBusy || isLoading) {
+		if (!nextMessage || isBusy) {
 			return;
 		}
 
@@ -395,18 +401,12 @@ function Conversation({
 				</p>
 			) : null}
 			<div className="flex-1 space-y-3 overflow-y-auto p-3 neo-scrollbar-hidden">
-				{isLoading ? (
-					<div className="flex h-full flex-col items-center justify-center gap-3 py-10 text-center">
-						<LoaderCircle className="h-5 w-5 animate-spin" />
-						<p className="font-mono text-sm neo-text-muted">Loading thread…</p>
-					</div>
-				) : null}
-				{!isLoading && thread && thread.messages.length === 0 ? (
+				{thread && thread.messages.length === 0 ? (
 					<p className="py-8 text-center font-mono text-sm neo-text-muted">
 						Ask anything about this song
 					</p>
 				) : null}
-				{!isLoading && thread
+				{thread
 					? thread.messages.map((message) => (
 							<MessageBubble key={message.id} message={message} />
 						))
@@ -417,7 +417,7 @@ function Conversation({
 			<form className="neo-border-t flex gap-2 p-3" onSubmit={handleSubmit}>
 				<input
 					className="neo-input flex-1 text-sm disabled:opacity-60"
-					disabled={isBusy || isLoading}
+					disabled={isBusy}
 					onChange={(event) => setInput(event.target.value)}
 					placeholder="Ask about a lyric, grammar point, or nuance..."
 					value={input}
@@ -425,7 +425,7 @@ function Conversation({
 				<button
 					aria-label="Send message"
 					className="neo-button px-3 py-2 disabled:opacity-60"
-					disabled={!input.trim() || isBusy || isLoading}
+					disabled={!input.trim() || isBusy}
 					type="submit"
 				>
 					<Send className="h-4 w-4" />
@@ -442,19 +442,13 @@ export function SongChat({
 	initialThreads: SongChatThread[];
 	songId: number;
 }) {
-	const router = useRouter();
 	const [isOpen, setIsOpen] = useState(false);
-	const [threads, setThreads] = useState(() =>
-		sortThreads(toThreadSummaries(initialThreads)),
-	);
-	const [threadDetails, setThreadDetails] = useState<
+	const [threadOverrides, setThreadOverrides] = useState<
 		Record<number, LocalResolvedThread>
-	>(() => toThreadDetailsRecord(initialThreads));
+	>({});
+	const [deletedThreadIds, setDeletedThreadIds] = useState<number[]>([]);
 	const [activeThreadId, setActiveThreadId] = useState<number | null>(null);
 	const [draftThread, setDraftThread] = useState<DraftChatThread | null>(null);
-	const [isLoadingThreadId, setIsLoadingThreadId] = useState<number | null>(
-		null,
-	);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [threadDeleteError, setThreadDeleteError] = useState<string | null>(
@@ -463,45 +457,30 @@ export function SongChat({
 	const [threadToDelete, setThreadToDelete] =
 		useState<SongChatThreadSummary | null>(null);
 	const [isDeletingThread, setIsDeletingThread] = useState(false);
-	const initialThreadSummaries = useMemo(
-		() => sortThreads(toThreadSummaries(initialThreads)),
-		[initialThreads],
-	);
-	const initialThreadDetails = useMemo(
+	const serverThreadDetails = useMemo(
 		() => toThreadDetailsRecord(initialThreads),
 		[initialThreads],
 	);
+	const deletedThreadIdSet = useMemo(
+		() => new Set(deletedThreadIds),
+		[deletedThreadIds],
+	);
+	const threadDetails = useMemo(() => {
+		const nextDetails: Record<number, LocalResolvedThread> = {
+			...serverThreadDetails,
+			...threadOverrides,
+		};
 
-	useEffect(() => {
-		setThreads(initialThreadSummaries);
-		setThreadDetails(initialThreadDetails);
-		setActiveThreadId(null);
-		setDraftThread(null);
-		setIsLoadingThreadId(null);
-		setIsSubmitting(false);
-		setErrorMessage(null);
-		setThreadDeleteError(null);
-		setThreadToDelete(null);
-		setIsOpen(false);
-	}, [initialThreadDetails, initialThreadSummaries]);
+		for (const threadId of deletedThreadIdSet) {
+			delete nextDetails[threadId];
+		}
 
-	useEffect(() => {
-		setThreads((currentThreads) => {
-			const nextThreads = new Map(
-				currentThreads.map((thread) => [thread.id, thread] as const),
-			);
-
-			for (const thread of initialThreads) {
-				nextThreads.set(thread.id, thread);
-			}
-
-			return sortThreads([...nextThreads.values()]);
-		});
-		setThreadDetails((currentDetails) => ({
-			...currentDetails,
-			...initialThreadDetails,
-		}));
-	}, [initialThreadDetails, initialThreads]);
+		return nextDetails;
+	}, [deletedThreadIdSet, serverThreadDetails, threadOverrides]);
+	const threads = useMemo(
+		() => sortThreads(Object.values(threadDetails).map(toThreadSummary)),
+		[threadDetails],
+	);
 
 	useEffect(() => {
 		if (!isOpen && !threadToDelete) {
@@ -531,13 +510,10 @@ export function SongChat({
 	const activeTitle =
 		draftThread?.title ??
 		(activeThreadId !== null
-			? (threads.find((thread) => thread.id === activeThreadId)?.title ??
-				"Thread")
+			? (threadDetails[activeThreadId]?.title ?? "Thread")
 			: "Song Assistant");
 
-	const isThreadLoading =
-		activeThreadId !== null && isLoadingThreadId === activeThreadId;
-	const isBusy = isSubmitting || isLoadingThreadId !== null;
+	const isBusy = isSubmitting;
 
 	function openDraftThread() {
 		setErrorMessage(null);
@@ -581,18 +557,25 @@ export function SongChat({
 
 		try {
 			await deleteSongChatThreadFn({ data: { threadId: threadToDelete.id } });
-			setThreads((currentThreads) =>
-				currentThreads.filter((thread) => thread.id !== threadToDelete.id),
-			);
-			setThreadDetails((currentDetails) => {
-				const nextDetails = { ...currentDetails };
-				delete nextDetails[threadToDelete.id];
-				return nextDetails;
+			setDeletedThreadIds((currentIds) => {
+				if (currentIds.includes(threadToDelete.id)) {
+					return currentIds;
+				}
+
+				return [...currentIds, threadToDelete.id];
+			});
+			setThreadOverrides((currentOverrides) => {
+				if (!(threadToDelete.id in currentOverrides)) {
+					return currentOverrides;
+				}
+
+				const nextOverrides = { ...currentOverrides };
+				delete nextOverrides[threadToDelete.id];
+				return nextOverrides;
 			});
 			if (activeThreadId === threadToDelete.id) {
 				setActiveThreadId(null);
 			}
-			void router.invalidate();
 			setThreadToDelete(null);
 		} catch (error) {
 			setThreadDeleteError(formatErrorMessage(error));
@@ -602,7 +585,7 @@ export function SongChat({
 	}
 
 	async function handleSend(message: string) {
-		if (isSubmitting || isThreadLoading) {
+		if (isSubmitting) {
 			return;
 		}
 
@@ -630,6 +613,12 @@ export function SongChat({
 				: null;
 		const isDraftMessage = previousDraftThread !== null;
 
+		if (!isDraftMessage && !previousActiveThread) {
+			setErrorMessage("The selected thread is no longer available.");
+			setActiveThreadId(null);
+			return;
+		}
+
 		setErrorMessage(null);
 		setIsSubmitting(true);
 
@@ -649,16 +638,13 @@ export function SongChat({
 				};
 			});
 		} else if (previousActiveThreadId !== null && previousActiveThread) {
-			setThreadDetails((currentDetails) => ({
-				...currentDetails,
-				[previousActiveThreadId]: {
-					...previousActiveThread,
-					messages: [
-						...previousActiveThread.messages,
-						userMessage,
-						assistantMessage,
-					],
-				},
+			setThreadOverrides((currentOverrides) => ({
+				...currentOverrides,
+				[previousActiveThreadId]: appendOptimisticExchange(
+					previousActiveThread,
+					userMessage,
+					assistantMessage,
+				),
 			}));
 		}
 
@@ -694,29 +680,23 @@ export function SongChat({
 								),
 							};
 						});
-					} else if (previousActiveThreadId !== null) {
-						setThreadDetails((currentDetails) => {
-							const currentThread = currentDetails[previousActiveThreadId];
-							if (!currentThread) {
-								return currentDetails;
-							}
+					} else if (previousActiveThreadId !== null && previousActiveThread) {
+						setThreadOverrides((currentOverrides) => {
+							const currentThread =
+								currentOverrides[previousActiveThreadId] ??
+								previousActiveThread;
 
 							return {
-								...currentDetails,
-								[previousActiveThreadId]: {
-									...currentThread,
-									messages: currentThread.messages.map((currentMessage) =>
-										currentMessage.id === assistantMessageId
-											? {
-													...currentMessage,
-													content: `${currentMessage.content}${event.textDelta}`,
-												}
-											: currentMessage,
-									),
-								},
+								...currentOverrides,
+								[previousActiveThreadId]: appendAssistantDelta(
+									currentThread,
+									assistantMessageId,
+									event.textDelta,
+								),
 							};
 						});
 					}
+
 					continue;
 				}
 
@@ -727,23 +707,22 @@ export function SongChat({
 				throw new Error("Failed to load the final chat thread state.");
 			}
 
-			setThreadDetails((currentDetails) => ({
-				...currentDetails,
+			setDeletedThreadIds((currentIds) =>
+				currentIds.filter((threadId) => threadId !== resolvedThread.id),
+			);
+			setThreadOverrides((currentOverrides) => ({
+				...currentOverrides,
 				[resolvedThread.id]: resolvedThread,
 			}));
-			setThreads((currentThreads) =>
-				upsertThreadSummary(currentThreads, resolvedThread),
-			);
 			setActiveThreadId(resolvedThread.id);
 			setDraftThread(null);
-			void router.invalidate();
 		} catch (error) {
 			setErrorMessage(formatErrorMessage(error));
 			if (isDraftMessage) {
 				setDraftThread(previousDraftThread);
 			} else if (previousActiveThreadId !== null && previousActiveThread) {
-				setThreadDetails((currentDetails) => ({
-					...currentDetails,
+				setThreadOverrides((currentOverrides) => ({
+					...currentOverrides,
 					[previousActiveThreadId]: previousActiveThread,
 				}));
 			}
@@ -821,7 +800,6 @@ export function SongChat({
 									activeTitle={activeTitle}
 									errorMessage={errorMessage}
 									isBusy={isSubmitting}
-									isLoading={isThreadLoading}
 									onBack={clearActiveThread}
 									onSend={handleSend}
 									thread={activeThread}

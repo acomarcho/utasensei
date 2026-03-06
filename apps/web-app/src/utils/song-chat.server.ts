@@ -1,11 +1,7 @@
 import { fireworks } from "@ai-sdk/fireworks";
 import { streamText } from "ai";
 import { desc, eq, sql } from "drizzle-orm";
-import type {
-	SongChatMessage,
-	SongChatThread,
-	SongChatThreadSummary,
-} from "~/data/ai-studio";
+import type { SongChatMessage, SongChatThread } from "~/data/ai-studio";
 import { db } from "~/utils/db/client.server";
 import {
 	chatMessages,
@@ -373,7 +369,7 @@ async function streamAssistantReply(options: {
 
 export async function listSongChatThreads(
 	songId: number,
-): Promise<SongChatThreadSummary[]> {
+): Promise<SongChatThread[]> {
 	const lookup = await getLatestRunForSong(songId);
 	if (!lookup) {
 		return [];
@@ -398,13 +394,7 @@ export async function listSongChatThreads(
 		)
 		.orderBy(desc(chatThreads.updatedAt), desc(chatThreads.id));
 
-	return rows.map((row) => ({
-		id: row.id,
-		title: row.title,
-		createdAt: row.createdAt,
-		updatedAt: row.updatedAt,
-		messageCount: Number(row.messageCount),
-	}));
+	return Promise.all(rows.map((row) => getThreadDetail(row.id)));
 }
 
 export async function getSongChatThread(

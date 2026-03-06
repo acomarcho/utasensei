@@ -1,3 +1,4 @@
+import { useRouter } from "@tanstack/react-router";
 import {
 	ArrowLeft,
 	LoaderCircle,
@@ -8,14 +9,7 @@ import {
 	X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import {
-	startTransition,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-	type FormEvent,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 import type {
@@ -25,7 +19,6 @@ import type {
 } from "~/data/ai-studio";
 import {
 	deleteSongChatThreadFn,
-	getSongChatThreadFn,
 	sendSongChatMessageFn,
 } from "~/utils/songs.functions";
 
@@ -87,6 +80,26 @@ function upsertThreadSummary(
 		nextSummary,
 		...threads.filter((existingThread) => existingThread.id !== thread.id),
 	]);
+}
+
+function toThreadSummary(thread: SongChatThread): SongChatThreadSummary {
+	return {
+		id: thread.id,
+		title: thread.title,
+		createdAt: thread.createdAt,
+		updatedAt: thread.updatedAt,
+		messageCount: thread.messageCount,
+	};
+}
+
+function toThreadSummaries(threads: SongChatThread[]): SongChatThreadSummary[] {
+	return threads.map(toThreadSummary);
+}
+
+function toThreadDetailsRecord(threads: SongChatThread[]) {
+	return Object.fromEntries(
+		threads.map((thread) => [thread.id, thread] as const),
+	);
 }
 
 function buildDraftTitle(message: string) {
@@ -426,14 +439,17 @@ export function SongChat({
 	initialThreads,
 	songId,
 }: {
-	initialThreads: SongChatThreadSummary[];
+	initialThreads: SongChatThread[];
 	songId: number;
 }) {
+	const router = useRouter();
 	const [isOpen, setIsOpen] = useState(false);
-	const [threads, setThreads] = useState(() => sortThreads(initialThreads));
+	const [threads, setThreads] = useState(() =>
+		sortThreads(toThreadSummaries(initialThreads)),
+	);
 	const [threadDetails, setThreadDetails] = useState<
 		Record<number, LocalResolvedThread>
-	>({});
+	>(() => toThreadDetailsRecord(initialThreads));
 	const [activeThreadId, setActiveThreadId] = useState<number | null>(null);
 	const [draftThread, setDraftThread] = useState<DraftChatThread | null>(null);
 	const [isLoadingThreadId, setIsLoadingThreadId] = useState<number | null>(
@@ -447,10 +463,18 @@ export function SongChat({
 	const [threadToDelete, setThreadToDelete] =
 		useState<SongChatThreadSummary | null>(null);
 	const [isDeletingThread, setIsDeletingThread] = useState(false);
+	const initialThreadSummaries = useMemo(
+		() => sortThreads(toThreadSummaries(initialThreads)),
+		[initialThreads],
+	);
+	const initialThreadDetails = useMemo(
+		() => toThreadDetailsRecord(initialThreads),
+		[initialThreads],
+	);
 
 	useEffect(() => {
-		setThreads(sortThreads(initialThreads));
-		setThreadDetails({});
+		setThreads(initialThreadSummaries);
+		setThreadDetails(initialThreadDetails);
 		setActiveThreadId(null);
 		setDraftThread(null);
 		setIsLoadingThreadId(null);
@@ -459,7 +483,25 @@ export function SongChat({
 		setThreadDeleteError(null);
 		setThreadToDelete(null);
 		setIsOpen(false);
-	}, [initialThreads]);
+	}, [initialThreadDetails, initialThreadSummaries]);
+
+	useEffect(() => {
+		setThreads((currentThreads) => {
+			const nextThreads = new Map(
+				currentThreads.map((thread) => [thread.id, thread] as const),
+			);
+
+			for (const thread of initialThreads) {
+				nextThreads.set(thread.id, thread);
+			}
+
+			return sortThreads([...nextThreads.values()]);
+		});
+		setThreadDetails((currentDetails) => ({
+			...currentDetails,
+			...initialThreadDetails,
+		}));
+	}, [initialThreadDetails, initialThreads]);
 
 	useEffect(() => {
 		if (!isOpen && !threadToDelete) {
@@ -527,29 +569,6 @@ export function SongChat({
 		setDraftThread(null);
 		setActiveThreadId(threadId);
 		setIsOpen(true);
-
-		if (threadDetails[threadId]) {
-			return;
-		}
-
-		setIsLoadingThreadId(threadId);
-		try {
-			const thread = await getSongChatThreadFn({ data: { songId, threadId } });
-			startTransition(() => {
-				setThreadDetails((currentDetails) => ({
-					...currentDetails,
-					[thread.id]: thread,
-				}));
-				setThreads((currentThreads) =>
-					upsertThreadSummary(currentThreads, thread),
-				);
-			});
-		} catch (error) {
-			setActiveThreadId(null);
-			setErrorMessage(formatErrorMessage(error));
-		} finally {
-			setIsLoadingThreadId(null);
-		}
 	}
 
 	async function handleDeleteThread() {
@@ -562,19 +581,18 @@ export function SongChat({
 
 		try {
 			await deleteSongChatThreadFn({ data: { threadId: threadToDelete.id } });
-			startTransition(() => {
-				setThreads((currentThreads) =>
-					currentThreads.filter((thread) => thread.id !== threadToDelete.id),
-				);
-				setThreadDetails((currentDetails) => {
-					const nextDetails = { ...currentDetails };
-					delete nextDetails[threadToDelete.id];
-					return nextDetails;
-				});
-				if (activeThreadId === threadToDelete.id) {
-					setActiveThreadId(null);
-				}
+			setThreads((currentThreads) =>
+				currentThreads.filter((thread) => thread.id !== threadToDelete.id),
+			);
+			setThreadDetails((currentDetails) => {
+				const nextDetails = { ...currentDetails };
+				delete nextDetails[threadToDelete.id];
+				return nextDetails;
 			});
+			if (activeThreadId === threadToDelete.id) {
+				setActiveThreadId(null);
+			}
+			void router.invalidate();
 			setThreadToDelete(null);
 		} catch (error) {
 			setThreadDeleteError(formatErrorMessage(error));
@@ -645,6 +663,7 @@ export function SongChat({
 		}
 
 		try {
+			let resolvedThread: SongChatThread | null = null;
 			const stream = await sendSongChatMessageFn({
 				data: {
 					songId,
@@ -701,18 +720,23 @@ export function SongChat({
 					continue;
 				}
 
-				startTransition(() => {
-					setThreadDetails((currentDetails) => ({
-						...currentDetails,
-						[event.thread.id]: event.thread,
-					}));
-					setThreads((currentThreads) =>
-						upsertThreadSummary(currentThreads, event.thread),
-					);
-					setActiveThreadId(event.thread.id);
-					setDraftThread(null);
-				});
+				resolvedThread = event.thread;
 			}
+
+			if (!resolvedThread) {
+				throw new Error("Failed to load the final chat thread state.");
+			}
+
+			setThreadDetails((currentDetails) => ({
+				...currentDetails,
+				[resolvedThread.id]: resolvedThread,
+			}));
+			setThreads((currentThreads) =>
+				upsertThreadSummary(currentThreads, resolvedThread),
+			);
+			setActiveThreadId(resolvedThread.id);
+			setDraftThread(null);
+			void router.invalidate();
 		} catch (error) {
 			setErrorMessage(formatErrorMessage(error));
 			if (isDraftMessage) {

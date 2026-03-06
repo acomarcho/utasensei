@@ -28,7 +28,7 @@ export const deleteSongFn = createServerFn({ method: "POST" })
 		return deleteSongById(data.songId);
 	});
 
-export const getSongChatThreadFn = createServerFn({ method: "GET" })
+export const getSongChatThreadFn = createServerFn({ method: "POST" })
 	.inputValidator((data: { songId: number; threadId: number }) => data)
 	.handler(async ({ data }) => {
 		return getSongChatThread(data.songId, data.threadId);

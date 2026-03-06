@@ -38,7 +38,7 @@ import { SongChat } from "~/components/song-chat";
 import type {
 	Flashcard,
 	FlashcardRun,
-	SongChatThreadSummary,
+	SongChatThread,
 	SongLesson,
 	SongListItem,
 } from "~/data/ai-studio";
@@ -1378,7 +1378,7 @@ export function SongDetailPage({
 	showChatWidget = true,
 	songLesson,
 }: {
-	chatThreads: SongChatThreadSummary[];
+	chatThreads: SongChatThread[];
 	flashcardRun: FlashcardRun | null;
 	showChatWidget?: boolean;
 	songLesson: SongLesson | null;

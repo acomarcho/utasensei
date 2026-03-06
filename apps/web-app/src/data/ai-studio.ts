@@ -76,7 +76,7 @@ export type SongChatThread = SongChatThreadSummary & {
 export type SongPageData = {
 	songLesson: SongLesson | null;
 	flashcardRun: FlashcardRun | null;
-	chatThreads: SongChatThreadSummary[];
+	chatThreads: SongChatThread[];
 };
 
 export type SongGenerationStep =

@@ -89,15 +89,11 @@ function Conversation({
 	onBack: () => void;
 }) {
 	const [input, setInput] = useState("");
-	const scrollRef = useRef<HTMLDivElement>(null);
+	const endRef = useRef<HTMLDivElement>(null);
 
-	// biome-ignore lint/correctness/useExhaustiveDependencies: scroll when messages change or typing state changes
 	useEffect(() => {
-		scrollRef.current?.scrollTo({
-			top: scrollRef.current.scrollHeight,
-			behavior: "smooth",
-		});
-	}, [thread.messages.length, isTyping]);
+		endRef.current?.scrollIntoView({ behavior: "smooth" });
+	});
 
 	const handleSubmit = (e: React.FormEvent) => {
 		e.preventDefault();
@@ -122,10 +118,7 @@ function Conversation({
 				</h3>
 			</div>
 
-			<div
-				className="flex-1 overflow-y-auto neo-scrollbar-hidden p-3 space-y-3"
-				ref={scrollRef}
-			>
+			<div className="flex-1 overflow-y-auto neo-scrollbar-hidden p-3 space-y-3">
 				{thread.messages.length === 0 && (
 					<p className="py-8 text-center font-mono text-sm neo-text-muted">
 						Ask anything about this song
@@ -176,6 +169,7 @@ function Conversation({
 						</div>
 					</div>
 				)}
+				<div ref={endRef} />
 			</div>
 
 			<form className="neo-border-t flex gap-2 p-3" onSubmit={handleSubmit}>

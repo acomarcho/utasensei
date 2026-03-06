@@ -10,8 +10,10 @@
 		"lint": "biome lint .",
 		"lint:fix": "biome lint . --write",
 		"format": "biome format . --write",
-		"db:generate": "pnpm --filter @utasensei/cli db:generate",
-		"db:push": "pnpm --filter @utasensei/cli db:push",
+		"db:generate:cli": "pnpm --filter @utasensei/cli db:generate",
+		"db:push:cli": "pnpm --filter @utasensei/cli db:push",
+		"db:generate:web-app": "pnpm --filter ./apps/web-app db:generate",
+		"db:push:web-app": "pnpm --filter ./apps/web-app db:push",
 		"prepare": "lefthook install",
 		"web-app": "pnpm --filter ./apps/web-app dev"
 	},

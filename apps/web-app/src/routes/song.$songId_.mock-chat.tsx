@@ -8,7 +8,7 @@ export const Route = createFileRoute("/song/$songId_/mock-chat")({
 		const songId = Number(params.songId);
 
 		if (!Number.isInteger(songId) || songId <= 0) {
-			return { flashcardRun: null, songLesson: null };
+			return { chatThreads: [], flashcardRun: null, songLesson: null };
 		}
 
 		return getSongPageDataFn({ data: { songId } });
@@ -17,11 +17,16 @@ export const Route = createFileRoute("/song/$songId_/mock-chat")({
 });
 
 function Mock1RouteComponent() {
-	const { flashcardRun, songLesson } = Route.useLoaderData();
+	const { chatThreads, flashcardRun, songLesson } = Route.useLoaderData();
 
 	return (
 		<>
-			<SongDetailPage flashcardRun={flashcardRun} songLesson={songLesson} />
+			<SongDetailPage
+				chatThreads={chatThreads}
+				flashcardRun={flashcardRun}
+				showChatWidget={false}
+				songLesson={songLesson}
+			/>
 			<ChatMock1 />
 		</>
 	);

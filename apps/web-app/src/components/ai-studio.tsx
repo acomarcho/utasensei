@@ -34,9 +34,11 @@ import {
 	useState,
 } from "react";
 import { NotFound } from "~/components/NotFound";
+import { SongChat } from "~/components/song-chat";
 import type {
 	Flashcard,
 	FlashcardRun,
+	SongChatThreadSummary,
 	SongLesson,
 	SongListItem,
 } from "~/data/ai-studio";
@@ -1371,10 +1373,14 @@ function DeleteSongModal({
 }
 
 export function SongDetailPage({
+	chatThreads,
 	flashcardRun,
+	showChatWidget = true,
 	songLesson,
 }: {
+	chatThreads: SongChatThreadSummary[];
 	flashcardRun: FlashcardRun | null;
+	showChatWidget?: boolean;
 	songLesson: SongLesson | null;
 }) {
 	const safeFlashcardRun = useMemo(
@@ -1697,6 +1703,9 @@ export function SongDetailPage({
 				onConfirm={() => void handleDeleteSong()}
 				songTitle={songLesson.song.title}
 			/>
+			{showChatWidget ? (
+				<SongChat initialThreads={chatThreads} songId={songLesson.song.id} />
+			) : null}
 		</>
 	);
 }

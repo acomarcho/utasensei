@@ -7,6 +7,8 @@ import type {
 } from "~/data/ai-studio";
 import { db } from "~/utils/db/client.server";
 import {
+	chatMessages,
+	chatThreads,
 	flashcards,
 	lyricLines,
 	songs,
@@ -14,6 +16,7 @@ import {
 	translationRuns,
 	vocabEntries,
 } from "~/utils/db/schema";
+import { listSongChatThreads } from "~/utils/song-chat.server";
 
 async function getLatestRun(songId: number) {
 	const [run] = await db
@@ -139,14 +142,16 @@ export async function getFlashcardRunBySongId(
 }
 
 export async function getSongPageData(songId: number): Promise<SongPageData> {
-	const [songLesson, flashcardRun] = await Promise.all([
+	const [songLesson, flashcardRun, chatThreads] = await Promise.all([
 		getSongLessonById(songId),
 		getFlashcardRunBySongId(songId),
+		listSongChatThreads(songId),
 	]);
 
 	return {
 		songLesson,
 		flashcardRun,
+		chatThreads,
 	};
 }
 
@@ -169,6 +174,15 @@ export async function deleteSongById(
 		.where(eq(translationRuns.songId, songId));
 	const runIds = runRows.map((row) => row.id);
 
+	const chatThreadRows =
+		runIds.length > 0
+			? await db
+					.select({ id: chatThreads.id })
+					.from(chatThreads)
+					.where(inArray(chatThreads.runId, runIds))
+			: [];
+	const chatThreadIds = chatThreadRows.map((row) => row.id);
+
 	const lyricLineRows =
 		runIds.length > 0
 			? await db
@@ -188,6 +202,14 @@ export async function deleteSongById(
 	const translationLineIds = translationLineRows.map((row) => row.id);
 
 	await db.transaction(async (tx) => {
+		if (chatThreadIds.length > 0) {
+			await tx
+				.delete(chatMessages)
+				.where(inArray(chatMessages.threadId, chatThreadIds));
+			await tx
+				.delete(chatThreads)
+				.where(inArray(chatThreads.id, chatThreadIds));
+		}
 		if (runIds.length > 0) {
 			await tx.delete(flashcards).where(inArray(flashcards.runId, runIds));
 		}

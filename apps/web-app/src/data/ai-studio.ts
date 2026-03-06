@@ -50,9 +50,33 @@ export type FlashcardRun = {
 	cards: Flashcard[];
 };
 
+export type SongChatRole = "user" | "assistant";
+
+export type SongChatMessage = {
+	id: number;
+	role: SongChatRole;
+	content: string;
+	createdAt: number;
+};
+
+export type SongChatThreadSummary = {
+	id: number;
+	title: string;
+	createdAt: number;
+	updatedAt: number;
+	messageCount: number;
+};
+
+export type SongChatThread = SongChatThreadSummary & {
+	runId: number;
+	songId: number;
+	messages: SongChatMessage[];
+};
+
 export type SongPageData = {
 	songLesson: SongLesson | null;
 	flashcardRun: FlashcardRun | null;
+	chatThreads: SongChatThreadSummary[];
 };
 
 export type SongGenerationStep =

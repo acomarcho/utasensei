@@ -3,10 +3,10 @@ import { drizzle } from "drizzle-orm/libsql";
 import { fileURLToPath } from "node:url";
 import * as schema from "./schema";
 
+const APP_ROOT_URL = new URL("../../../", import.meta.url);
+
 function getDefaultDbPath() {
-	return fileURLToPath(
-		new URL("../../../../cli/utasensei.db", import.meta.url),
-	);
+	return fileURLToPath(new URL("./utasensei.db", APP_ROOT_URL));
 }
 
 function normalizeDbUrl(rawUrl: string): string {
@@ -14,7 +14,8 @@ function normalizeDbUrl(rawUrl: string): string {
 		return rawUrl;
 	}
 
-	return `file:${rawUrl}`;
+	const resolvedPath = fileURLToPath(new URL(rawUrl, APP_ROOT_URL));
+	return `file:${resolvedPath}`;
 }
 
 const rawUrl = process.env.DB_FILE_NAME ?? getDefaultDbPath();

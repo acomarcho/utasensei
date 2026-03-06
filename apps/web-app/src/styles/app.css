@@ -1,5 +1,6 @@
 @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap");
 @import "tailwindcss";
+@source "../../../../node_modules/streamdown/dist/*.js";
 
 @theme {
   --font-sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
@@ -194,6 +195,57 @@
   overflow-wrap: anywhere;
   word-break: break-word;
   hyphens: auto;
+}
+
+.neo-markdown {
+  display: grid;
+  gap: 0.65rem;
+  line-height: 1.55;
+}
+
+.neo-markdown :where(p, ul, ol, pre, blockquote, table) {
+  margin: 0;
+}
+
+.neo-markdown :where(ul, ol) {
+  padding-left: 1.2rem;
+}
+
+.neo-markdown :where(li + li) {
+  margin-top: 0.25rem;
+}
+
+.neo-markdown :where(a) {
+  color: var(--bg-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+.neo-markdown :where(code) {
+  background: rgb(0 0 0 / 0.08);
+  border: 1px solid rgb(0 0 0 / 0.12);
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  padding: 0.12rem 0.32rem;
+}
+
+.neo-markdown :where(pre) {
+  background: rgb(0 0 0 / 0.08);
+  border: 1px solid rgb(0 0 0 / 0.18);
+  overflow-x: auto;
+  padding: 0.8rem;
+}
+
+.neo-markdown :where(pre code) {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.neo-markdown :where(blockquote) {
+  border-left: 3px solid var(--bg-accent);
+  padding-left: 0.9rem;
+  color: var(--text-muted);
 }
 
 .neo-stat-chip {

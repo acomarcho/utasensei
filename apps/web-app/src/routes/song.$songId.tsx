@@ -8,6 +8,7 @@ export const Route = createFileRoute("/song/$songId")({
 
 		if (!Number.isInteger(songId) || songId <= 0) {
 			return {
+				chatThreads: [],
 				flashcardRun: null,
 				songLesson: null,
 			};
@@ -19,7 +20,13 @@ export const Route = createFileRoute("/song/$songId")({
 });
 
 function SongRouteComponent() {
-	const { flashcardRun, songLesson } = Route.useLoaderData();
+	const { chatThreads, flashcardRun, songLesson } = Route.useLoaderData();
 
-	return <SongDetailPage flashcardRun={flashcardRun} songLesson={songLesson} />;
+	return (
+		<SongDetailPage
+			chatThreads={chatThreads}
+			flashcardRun={flashcardRun}
+			songLesson={songLesson}
+		/>
+	);
 }

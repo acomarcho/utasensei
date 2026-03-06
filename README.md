@@ -54,11 +54,13 @@ pnpm build
 pnpm lint
 ```
 
-### CLI database commands
+### Database commands
 
 ```bash
-pnpm db:generate
-pnpm db:push
+pnpm db:generate:cli
+pnpm db:push:cli
+pnpm db:generate:web-app
+pnpm db:push:web-app
 ```
 
 ## CLI App Notes

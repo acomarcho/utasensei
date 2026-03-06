@@ -11,6 +11,7 @@ const HELP_TEXT = [
 	"  pnpm cli extract-html <url>",
 	"  pnpm cli translate-song <url>",
 	"  pnpm cli songs [id]",
+	"  pnpm cli songs delete <id>",
 	"  pnpm cli flashcards build <songId>",
 	"  pnpm cli flashcards list <songId>",
 	"",
@@ -19,14 +20,25 @@ const HELP_TEXT = [
 	"  pnpm cli translate-song https://www.lyrical-nonsense.com/global/lyrics/sayuri/hana-no-tou/",
 	"  pnpm cli songs",
 	"  pnpm cli songs 1",
+	"  pnpm cli songs delete 1",
 	"  pnpm cli flashcards build 1",
 	"  pnpm cli flashcards list 1",
 ].join("\n");
 
 type CliArgs =
 	| { command: "extract-html" | "translate-song"; url: string }
-	| { command: "songs"; id?: number }
+	| { command: "songs"; action: "list"; id?: number }
+	| { command: "songs"; action: "delete"; id: number }
 	| { command: "flashcards"; action: "build" | "list"; songId: number };
+
+function parsePositiveInteger(rawValue: string, label: string): number {
+	const parsedValue = Number(rawValue);
+	if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
+		throw new Error(`Invalid ${label} \"${rawValue}\".\n\n${HELP_TEXT}`);
+	}
+
+	return parsedValue;
+}
 
 function parseCliArgs(argv: string[]): CliArgs {
 	const rawArgs = argv.slice(2).filter((arg) => arg.trim().length > 0);
@@ -39,17 +51,29 @@ function parseCliArgs(argv: string[]): CliArgs {
 	const command = args[0];
 
 	if (command === "songs") {
-		const idArg = args[1];
-		if (!idArg) {
-			return { command: "songs" };
+		const actionArg = args[1];
+		if (!actionArg) {
+			return { command: "songs", action: "list" };
 		}
 
-		const parsedId = Number(idArg);
-		if (!Number.isInteger(parsedId) || parsedId <= 0) {
-			throw new Error(`Invalid song id "${idArg}".\n\n${HELP_TEXT}`);
+		if (actionArg === "delete") {
+			const idArg = args[2];
+			if (!idArg) {
+				throw new Error(`Missing song id.\n\n${HELP_TEXT}`);
+			}
+
+			return {
+				command: "songs",
+				action: "delete",
+				id: parsePositiveInteger(idArg, "song id"),
+			};
 		}
 
-		return { command: "songs", id: parsedId };
+		return {
+			command: "songs",
+			action: "list",
+			id: parsePositiveInteger(actionArg, "song id"),
+		};
 	}
 
 	if (command === "flashcards") {
@@ -62,12 +86,11 @@ function parseCliArgs(argv: string[]): CliArgs {
 			throw new Error(`Missing song id.\n\n${HELP_TEXT}`);
 		}
 
-		const parsedId = Number(idArg);
-		if (!Number.isInteger(parsedId) || parsedId <= 0) {
-			throw new Error(`Invalid song id "${idArg}".\n\n${HELP_TEXT}`);
-		}
-
-		return { command: "flashcards", action, songId: parsedId };
+		return {
+			command: "flashcards",
+			action,
+			songId: parsePositiveInteger(idArg, "song id"),
+		};
 	}
 
 	const urlArg = args[1];
@@ -105,7 +128,7 @@ async function main(): Promise<void> {
 				await runTranslateSong(parsed.url);
 				return;
 			case "songs":
-				await runSongs(parsed.id);
+				await runSongs(parsed.action, parsed.id);
 				return;
 			case "flashcards":
 				await runFlashcards(parsed.action, parsed.songId);

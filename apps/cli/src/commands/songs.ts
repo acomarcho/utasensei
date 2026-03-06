@@ -1,6 +1,15 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "../db/client";
-import { songs, translationRuns } from "../db/schema";
+import {
+	flashcards,
+	lyricLines,
+	songs,
+	translationLines,
+	translationRuns,
+	vocabEntries,
+} from "../db/schema";
+
+type SongAction = "list" | "delete";
 
 type SongSummary = {
 	id: number;
@@ -26,6 +35,37 @@ type SongDetails = {
 	}>;
 };
 
+type DeleteSongResult = {
+	song: SongSummary;
+	deleted: {
+		songs: number;
+		translationRuns: number;
+		lyricLines: number;
+		translationLines: number;
+		vocabEntries: number;
+		flashcards: number;
+	};
+};
+
+async function getSongSummary(songId: number): Promise<SongSummary> {
+	const [song] = await db
+		.select({
+			id: songs.id,
+			title: songs.title,
+			artist: songs.artist,
+			createdAt: songs.createdAt,
+		})
+		.from(songs)
+		.where(eq(songs.id, songId))
+		.limit(1);
+
+	if (!song) {
+		throw new Error(`Song id ${songId} not found.`);
+	}
+
+	return song;
+}
+
 async function listSongs(): Promise<void> {
 	const rows = await db
 		.select({
@@ -41,20 +81,7 @@ async function listSongs(): Promise<void> {
 }
 
 async function getSongDetails(songId: number): Promise<void> {
-	const [song] = await db
-		.select({
-			id: songs.id,
-			title: songs.title,
-			artist: songs.artist,
-			createdAt: songs.createdAt,
-		})
-		.from(songs)
-		.where(eq(songs.id, songId))
-		.limit(1);
-
-	if (!song) {
-		throw new Error(`Song id ${songId} not found.`);
-	}
+	const song = await getSongSummary(songId);
 
 	const [run] = await db
 		.select({
@@ -116,7 +143,100 @@ async function getSongDetails(songId: number): Promise<void> {
 	process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
 }
 
-export async function runSongs(songId?: number): Promise<void> {
+async function deleteSong(songId: number): Promise<void> {
+	const song = await getSongSummary(songId);
+
+	const runRows = await db
+		.select({ id: translationRuns.id })
+		.from(translationRuns)
+		.where(eq(translationRuns.songId, songId));
+	const runIds = runRows.map((row) => row.id);
+
+	const lyricLineRows =
+		runIds.length > 0
+			? await db
+					.select({ id: lyricLines.id })
+					.from(lyricLines)
+					.where(inArray(lyricLines.runId, runIds))
+			: [];
+	const lyricLineIds = lyricLineRows.map((row) => row.id);
+
+	const translationLineRows =
+		lyricLineIds.length > 0
+			? await db
+					.select({ id: translationLines.id })
+					.from(translationLines)
+					.where(inArray(translationLines.lyricLineId, lyricLineIds))
+			: [];
+	const translationLineIds = translationLineRows.map((row) => row.id);
+
+	const vocabEntryRows =
+		translationLineIds.length > 0
+			? await db
+					.select({ id: vocabEntries.id })
+					.from(vocabEntries)
+					.where(inArray(vocabEntries.translationLineId, translationLineIds))
+			: [];
+
+	const flashcardRows =
+		runIds.length > 0
+			? await db
+					.select({ id: flashcards.id })
+					.from(flashcards)
+					.where(inArray(flashcards.runId, runIds))
+			: [];
+
+	await db.transaction(async (tx) => {
+		if (runIds.length > 0) {
+			await tx.delete(flashcards).where(inArray(flashcards.runId, runIds));
+		}
+		if (translationLineIds.length > 0) {
+			await tx
+				.delete(vocabEntries)
+				.where(inArray(vocabEntries.translationLineId, translationLineIds));
+		}
+		if (lyricLineIds.length > 0) {
+			await tx
+				.delete(translationLines)
+				.where(inArray(translationLines.lyricLineId, lyricLineIds));
+		}
+		if (runIds.length > 0) {
+			await tx.delete(lyricLines).where(inArray(lyricLines.runId, runIds));
+			await tx
+				.delete(translationRuns)
+				.where(eq(translationRuns.songId, songId));
+		}
+		await tx.delete(songs).where(eq(songs.id, songId));
+	});
+
+	const payload: DeleteSongResult = {
+		song,
+		deleted: {
+			songs: 1,
+			translationRuns: runIds.length,
+			lyricLines: lyricLineIds.length,
+			translationLines: translationLineIds.length,
+			vocabEntries: vocabEntryRows.length,
+			flashcards: flashcardRows.length,
+		},
+	};
+
+	process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+}
+
+export async function runSongs(
+	action: SongAction = "list",
+	songId?: number,
+): Promise<void> {
+	if (action === "delete") {
+		if (songId === undefined) {
+			throw new Error("Song id is required for delete.");
+		}
+
+		await deleteSong(songId);
+		return;
+	}
+
 	if (songId === undefined) {
 		await listSongs();
 		return;

@@ -1,13 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { NewSongPage } from "~/components/ai-studio";
 
 export const Route = createFileRoute("/")({
-	component: Home,
+	component: NewSongPage,
 });
-
-function Home() {
-	return (
-		<div className="p-2">
-			<h3>Welcome Home!!!</h3>
-		</div>
-	);
-}

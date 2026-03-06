@@ -56,6 +56,24 @@ type TeachState = {
 	dbSongId?: number;
 };
 
+function logCliDebug(step: string, data: Record<string, unknown> = {}) {
+	console.log(`[translate-song:${step}]`, data);
+}
+
+function formatCliError(error: unknown) {
+	if (error instanceof Error) {
+		const errorWithCause = error as Error & { cause?: unknown };
+		return {
+			name: error.name,
+			message: error.message,
+			stack: error.stack,
+			cause: errorWithCause.cause,
+		};
+	}
+
+	return { error };
+}
+
 function normalizeLine(text: string): string {
 	return text.replace(/\s+/g, " ").trim();
 }
@@ -91,6 +109,7 @@ function truncateForPrompt(text: string, maxChars: number): string {
 }
 
 export async function runTranslateSong(url: string): Promise<void> {
+	logCliDebug("run_start", { modelId: MODEL_ID, url });
 	if (!process.env.FIREWORKS_API_KEY) {
 		throw new Error(
 			"Missing FIREWORKS_API_KEY. Add it to .env (see .env.example).",
@@ -109,6 +128,12 @@ export async function runTranslateSong(url: string): Promise<void> {
 		collectOrderedTextSegments(cleanTree.nodes, TEXT_SEGMENT_LIMIT * 2),
 		TEXT_SEGMENT_LIMIT,
 	);
+
+	logCliDebug("html_extracted", {
+		pageTitle: cleanTree.title,
+		pageUrl: cleanTree.url,
+		nodeCount: cleanTree.nodes.length,
+	});
 
 	const state: TeachState = {
 		songMetadata: null,
@@ -138,6 +163,10 @@ export async function runTranslateSong(url: string): Promise<void> {
 				description: "Set song metadata (title and artist) from page content.",
 				inputSchema: z.object({ songMetadata: songMetadataSchema }),
 				execute: async ({ songMetadata }) => {
+					logCliDebug("tool_call", {
+						tool: "set_song_metadata_state",
+						songMetadata,
+					});
 					const title = normalizeLine(songMetadata.title);
 					const artist = normalizeLine(songMetadata.artist);
 					if (!title || !artist) {
@@ -153,6 +182,10 @@ export async function runTranslateSong(url: string): Promise<void> {
 					"Set cleaned lyric lines extracted from the page. Keep order, remove navigation/noise/metadata.",
 				inputSchema: z.object({ lyricsLines: z.array(z.string()) }),
 				execute: async ({ lyricsLines }) => {
+					logCliDebug("tool_call", {
+						tool: "set_lyrics_lines_state",
+						lyricsLineCount: lyricsLines.length,
+					});
 					if (!state.songMetadata) {
 						return "Please call set_song_metadata_state first before using this tool.";
 					}
@@ -178,6 +211,10 @@ export async function runTranslateSong(url: string): Promise<void> {
 					translations: z.array(translationLineSchema),
 				}),
 				execute: async ({ translations }) => {
+					logCliDebug("tool_call", {
+						tool: "set_translation_state",
+						translationCount: translations.length,
+					});
 					if (!state.songMetadata) {
 						return "Please call set_song_metadata_state first before using this tool.";
 					}
@@ -212,6 +249,10 @@ export async function runTranslateSong(url: string): Promise<void> {
 					vocabularyExplanations: z.array(explanationSchema),
 				}),
 				execute: async ({ vocabularyExplanations }) => {
+					logCliDebug("tool_call", {
+						tool: "set_vocab_explanations_state",
+						explanationCount: vocabularyExplanations.length,
+					});
 					if (state.translations.length === 0) {
 						return "Please call set_translation_state first before using this tool.";
 					}
@@ -263,76 +304,102 @@ export async function runTranslateSong(url: string): Promise<void> {
 		.map((line, index) => `${index + 1}. ${line}`)
 		.join("\n");
 
-	await agent.generate({
-		prompt: [
-			"Task: generate Japanese-learning output from this webpage structure.",
-			"You must call tools in this order:",
-			"1) set_song_metadata_state",
-			"2) set_lyrics_lines_state",
-			"3) set_translation_state",
-			"4) set_vocab_explanations_state",
-			"",
-			"Important sequencing constraints:",
-			"- Do not skip any tool.",
-			"- Do not call tools out of order.",
-			"- Do not finalize early.",
-			"",
-			"Metadata extraction guidance:",
-			"- songMetadata.title should be the song title only.",
-			"- songMetadata.artist should be the artist only.",
-			"- Remove site suffixes like '| Genius Lyrics', 'Lyrics', or branding text.",
-			"",
-			"Rules for lyrics extraction:",
-			"- Extract only lyric lines in singing order.",
-			"- Remove numbering, metadata labels, menu text, ads, and unrelated page text.",
-			"- Remove section headers like [Verse], [Chorus], [Bridge], [Outro].",
-			"- Remove UI strings like Share, Embed, Contributors, About, Translations tabs.",
-			"- Keep repeated chorus lines if they appear in lyrics.",
-			"- Keep each lyric line as a single cleaned string.",
-			"- Keep romanized Japanese lines exactly as they appear (except trimming whitespace and numbering).",
-			"",
-			"Rules for translation and teaching:",
-			"- One translation per lyric line, preserve exact original line text.",
-			"- One explanation entry per translation line.",
-			"- Explain grammar/forms in beginner-friendly plain English.",
-			"- Vocabulary can be words or phrase chunks.",
-			"- Prefer phrase chunks when they teach form better (e.g., motte kita, you ni).",
-			"- longFormExplanation should explain what each important chunk does in the sentence.",
-			"",
-			"Few-shot example A (metadata + lyrics extraction):",
-			"Input page title: Sayuri - Tower of Flower Lyrics (Romanized) | Hana no Tou [花の塔] - Lyrical Nonsense",
-			"Input fragments:",
-			"1. Alternate Title: Hana no Tou",
-			"2. Artist: Sayuri",
-			"3. 1. Kimi ga motte kita manga",
-			"4. 2. Kureta shiranai namae no ohana",
-			"5. Share",
-			"Expected tool payloads:",
-			'set_song_metadata_state -> {"songMetadata":{"title":"Tower of Flower","artist":"Sayuri"}}',
-			'set_lyrics_lines_state -> {"lyricsLines":["Kimi ga motte kita manga","Kureta shiranai namae no ohana"]}',
-			"",
-			"Few-shot example B (teaching style you MUST follow):",
-			"Original: Kimi ga motte kita manga",
-			"Translation: The manga that you brought",
-			"Good longFormExplanation: \"Kimi means 'you'. Particle ga marks kimi as subject. motte kita is from motte kuru (to bring), where motte is te-form of motsu and kita is past of kuru, so together it means 'brought'. manga is 'comic/manga'.\"",
-			'Good vocabularies: [{"original":"kimi","explanation":"you"},{"original":"ga","explanation":"subject marker"},{"original":"motte kita","explanation":"past form chunk from motte kuru, meaning \'brought\'"},{"original":"manga","explanation":"comic/manga"}]',
-			"",
-			"Few-shot example C (teaching style you MUST follow):",
-			"Original: Nakanu you ni",
-			"Translation: So that I won't cry",
-			"Good longFormExplanation: \"Nakanu is a literary/soft negative form related to nakanai (not cry). you ni means 'so that' or 'in order to'. As a chunk, nakanu you ni expresses purpose/prevention: doing something so crying does not happen.\"",
-			'Good vocabularies: [{"original":"nakanu","explanation":"negative form meaning \'not cry\'"},{"original":"you ni","explanation":"so that / in order to"}]',
-			"",
-			`Page URL: ${cleanTree.url}`,
-			`Page title: ${cleanTree.title}`,
-			"",
-			"Clean text fragments (ordered):",
-			indexedSegments,
-			"",
-			"Clean HTML YAML snapshot:",
-			cleanYaml,
-		].join("\n"),
+	const prompt = [
+		"Task: generate Japanese-learning output from this webpage structure.",
+		"You must call tools in this order:",
+		"1) set_song_metadata_state",
+		"2) set_lyrics_lines_state",
+		"3) set_translation_state",
+		"4) set_vocab_explanations_state",
+		"",
+		"Important sequencing constraints:",
+		"- Do not skip any tool.",
+		"- Do not call tools out of order.",
+		"- Do not finalize early.",
+		"",
+		"Metadata extraction guidance:",
+		"- songMetadata.title should be the song title only.",
+		"- songMetadata.artist should be the artist only.",
+		"- Remove site suffixes like '| Genius Lyrics', 'Lyrics', or branding text.",
+		"",
+		"Rules for lyrics extraction:",
+		"- Extract only lyric lines in singing order.",
+		"- Remove numbering, metadata labels, menu text, ads, and unrelated page text.",
+		"- Remove section headers like [Verse], [Chorus], [Bridge], [Outro].",
+		"- Remove UI strings like Share, Embed, Contributors, About, Translations tabs.",
+		"- Keep repeated chorus lines if they appear in lyrics.",
+		"- Keep each lyric line as a single cleaned string.",
+		"- Keep romanized Japanese lines exactly as they appear (except trimming whitespace and numbering).",
+		"",
+		"Rules for translation and teaching:",
+		"- One translation per lyric line, preserve exact original line text.",
+		"- One explanation entry per translation line.",
+		"- Explain grammar/forms in beginner-friendly plain English.",
+		"- Vocabulary can be words or phrase chunks.",
+		"- Prefer phrase chunks when they teach form better (e.g., motte kita, you ni).",
+		"- longFormExplanation should explain what each important chunk does in the sentence.",
+		"",
+		"Few-shot example A (metadata + lyrics extraction):",
+		"Input page title: Sayuri - Tower of Flower Lyrics (Romanized) | Hana no Tou [花の塔] - Lyrical Nonsense",
+		"Input fragments:",
+		"1. Alternate Title: Hana no Tou",
+		"2. Artist: Sayuri",
+		"3. 1. Kimi ga motte kita manga",
+		"4. 2. Kureta shiranai namae no ohana",
+		"5. Share",
+		"Expected tool payloads:",
+		'set_song_metadata_state -> {"songMetadata":{"title":"Tower of Flower","artist":"Sayuri"}}',
+		'set_lyrics_lines_state -> {"lyricsLines":["Kimi ga motte kita manga","Kureta shiranai namae no ohana"]}',
+		"",
+		"Few-shot example B (teaching style you MUST follow):",
+		"Original: Kimi ga motte kita manga",
+		"Translation: The manga that you brought",
+		"Good longFormExplanation: \"Kimi means 'you'. Particle ga marks kimi as subject. motte kita is from motte kuru (to bring), where motte is te-form of motsu and kita is past of kuru, so together it means 'brought'. manga is 'comic/manga'.\"",
+		'Good vocabularies: [{"original":"kimi","explanation":"you"},{"original":"ga","explanation":"subject marker"},{"original":"motte kita","explanation":"past form chunk from motte kuru, meaning \'brought\'"},{"original":"manga","explanation":"comic/manga"}]',
+		"",
+		"Few-shot example C (teaching style you MUST follow):",
+		"Original: Nakanu you ni",
+		"Translation: So that I won't cry",
+		"Good longFormExplanation: \"Nakanu is a literary/soft negative form related to nakanai (not cry). you ni means 'so that' or 'in order to'. As a chunk, nakanu you ni expresses purpose/prevention: doing something so crying does not happen.\"",
+		'Good vocabularies: [{"original":"nakanu","explanation":"negative form meaning \'not cry\'"},{"original":"you ni","explanation":"so that / in order to"}]',
+		"",
+		`Page URL: ${cleanTree.url}`,
+		`Page title: ${cleanTree.title}`,
+		"",
+		"Clean text fragments (ordered):",
+		indexedSegments,
+		"",
+		"Clean HTML YAML snapshot:",
+		cleanYaml,
+	].join("\n");
+
+	logCliDebug("agent_generate_start", {
+		promptLength: prompt.length,
+		promptPreview: prompt.slice(0, 600),
 	});
+
+	try {
+		await agent.generate({ prompt });
+		logCliDebug("agent_generate_success", {
+			hasSongMetadata: Boolean(state.songMetadata),
+			lyricsLineCount: state.lyricsLines.length,
+			translationCount: state.translations.length,
+			explanationCount: state.vocabularyExplanations.length,
+		});
+	} catch (error) {
+		logCliDebug("agent_generate_failure", {
+			error: formatCliError(error),
+			promptLength: prompt.length,
+			promptPreview: prompt.slice(0, 600),
+			stateSnapshot: {
+				hasSongMetadata: Boolean(state.songMetadata),
+				lyricsLineCount: state.lyricsLines.length,
+				translationCount: state.translations.length,
+				explanationCount: state.vocabularyExplanations.length,
+			},
+		});
+		throw error;
+	}
 
 	if (!state.songMetadata) {
 		throw new Error("Agent did not set songMetadata state.");

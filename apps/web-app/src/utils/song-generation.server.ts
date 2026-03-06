@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { fireworks } from "@ai-sdk/fireworks";
-import { generateObject } from "ai";
+import { stepCountIs, ToolLoopAgent, tool } from "ai";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { SongGenerationStreamEvent } from "~/data/ai-studio";
@@ -8,7 +8,6 @@ import {
 	cleanHtmlTreeToYaml,
 	collectOrderedTextSegments,
 	extractCleanHtmlTree,
-	type CleanHtmlTree,
 } from "~/utils/clean-html.server";
 import { db } from "~/utils/db/client.server";
 import {
@@ -47,28 +46,17 @@ const explanationSchema = z.object({
 	vocabularies: z.array(vocabularySchema),
 });
 
-const extractionResultSchema = z.object({
-	lyricsLines: z.array(z.string()),
-	songMetadata: songMetadataSchema,
-});
-
-const translationResultSchema = z.object({
-	translations: z.array(translationLineSchema),
-});
-
-const explanationResultSchema = z.object({
-	vocabularyExplanations: z.array(explanationSchema),
-});
-
 type SongMetadata = z.infer<typeof songMetadataSchema>;
 type TranslationLine = z.infer<typeof translationLineSchema> & { id: number };
 type ExplanationLine = z.infer<typeof explanationSchema>;
 
 type TeachState = {
-	lyricsLines: string[];
 	songMetadata: SongMetadata | null;
+	lyricsLines: string[];
 	translations: TranslationLine[];
 	vocabularyExplanations: ExplanationLine[];
+	dbRunId?: number;
+	dbSongId?: number;
 };
 
 type SavedSongResult = {
@@ -76,12 +64,34 @@ type SavedSongResult = {
 	songId: number;
 };
 
+type SongGenerationProgressCallback = (
+	event: SongGenerationStreamEvent,
+) => void | Promise<void>;
+
+function logGenerationDebug(step: string, data: Record<string, unknown> = {}) {
+	console.log(`[song-generation:${step}]`, data);
+}
+
+function formatGenerationError(error: unknown) {
+	if (error instanceof Error) {
+		const errorWithCause = error as Error & { cause?: unknown };
+		return {
+			name: error.name,
+			message: error.message,
+			stack: error.stack,
+			cause: errorWithCause.cause,
+		};
+	}
+
+	return { error };
+}
+
 function normalizeLine(text: string): string {
 	return text.replace(/\s+/g, " ").trim();
 }
 
 function compactSegments(segments: string[], limit: number): string[] {
-	const output: string[] = [];
+	const out: string[] = [];
 
 	for (const raw of segments) {
 		const line = normalizeLine(raw);
@@ -89,17 +99,17 @@ function compactSegments(segments: string[], limit: number): string[] {
 			continue;
 		}
 
-		if (output[output.length - 1] === line) {
+		if (out[out.length - 1] === line) {
 			continue;
 		}
 
-		output.push(line);
-		if (output.length >= limit) {
+		out.push(line);
+		if (out.length >= limit) {
 			break;
 		}
 	}
 
-	return output;
+	return out;
 }
 
 function truncateForPrompt(text: string, maxChars: number): string {
@@ -126,249 +136,37 @@ function createStatusEvent(
 	};
 }
 
-export function isChallengePage(cleanTree: CleanHtmlTree): boolean {
-	const lowerTitle = cleanTree.title.toLowerCase();
-	const sampleText = cleanTree.nodes
-		.flatMap((node) => [
-			node.text ?? "",
-			...(node.children?.map((child) => child.text ?? "") ?? []),
-		])
-		.join(" ")
-		.toLowerCase();
-
-	return (
-		lowerTitle.includes("just a moment") ||
-		sampleText.includes("make sure you're a human") ||
-		sampleText.includes("verify you are human") ||
-		sampleText.includes("checking if the site connection is secure") ||
-		sampleText.includes("cloudflare")
-	);
-}
-
-function buildSourceMaterials(cleanTree: CleanHtmlTree) {
-	const cleanYaml = truncateForPrompt(
-		cleanHtmlTreeToYaml(cleanTree),
-		CLEAN_YAML_PROMPT_CHAR_LIMIT,
-	);
-	const textSegments = compactSegments(
-		collectOrderedTextSegments(cleanTree.nodes, TEXT_SEGMENT_LIMIT * 2),
-		TEXT_SEGMENT_LIMIT,
-	);
-	const indexedSegments = textSegments
-		.map((line, index) => `${index + 1}. ${line}`)
-		.join("\n");
-
-	return { cleanYaml, indexedSegments };
-}
-
-export async function extractMetadataAndLyrics(
-	cleanTree: CleanHtmlTree,
-): Promise<{ lyricsLines: string[]; songMetadata: SongMetadata }> {
-	const { cleanYaml, indexedSegments } = buildSourceMaterials(cleanTree);
-	const result = await generateObject({
-		model: fireworks(MODEL_ID),
-		prompt: [
-			"Extract song metadata and lyric lines from this webpage.",
-			"Return JSON only.",
-			"",
-			"Metadata rules:",
-			"- title must be only the song title.",
-			"- artist must be only the artist name.",
-			"- remove site branding and words like Lyrics.",
-			"",
-			"Lyrics rules:",
-			"- extract only lyric lines in singing order.",
-			"- remove numbering, menus, ads, navigation, comments, and page chrome.",
-			"- remove section headers like [Verse], [Chorus], [Bridge], [Outro].",
-			"- keep repeated lyric lines if they appear in the song.",
-			"- keep each lyric line as one cleaned string.",
-			"- keep romanized Japanese exactly as shown except whitespace cleanup.",
-			"",
-			"Few-shot example:",
-			"Input page title: Sayuri - Tower of Flower Lyrics (Romanized) | Hana no Tou [花の塔] - Lyrical Nonsense",
-			"Input fragments:",
-			"1. Alternate Title: Hana no Tou",
-			"2. Artist: Sayuri",
-			"3. 1. Kimi ga motte kita manga",
-			"4. 2. Kureta shiranai namae no ohana",
-			"5. Share",
-			"Expected output:",
-			'{"songMetadata":{"title":"Tower of Flower","artist":"Sayuri"},"lyricsLines":["Kimi ga motte kita manga","Kureta shiranai namae no ohana"]}',
-			"",
-			`Page URL: ${cleanTree.url}`,
-			`Page title: ${cleanTree.title}`,
-			"",
-			"Clean text fragments (ordered):",
-			indexedSegments,
-			"",
-			"Clean HTML YAML snapshot:",
-			cleanYaml,
-		].join("\n"),
-		schema: extractionResultSchema,
-		schemaName: "song_extraction",
-	});
-
-	const title = normalizeLine(result.object.songMetadata.title);
-	const artist = normalizeLine(result.object.songMetadata.artist);
-	const lyricsLines = result.object.lyricsLines
-		.map(normalizeLine)
-		.filter((line) => line.length > 0);
-
-	if (!title || !artist) {
-		throw new Error("The model did not return usable song metadata.");
-	}
-	if (lyricsLines.length === 0) {
-		throw new Error("The model did not return any lyric lines.");
+async function reportStatus(
+	onProgress: SongGenerationProgressCallback | undefined,
+	step:
+		| "fetching_song_lyrics"
+		| "generating_translation"
+		| "generating_explanations"
+		| "generating_flashcards",
+	message: string,
+) {
+	if (!onProgress) {
+		return;
 	}
 
-	return {
-		lyricsLines,
-		songMetadata: { artist, title },
-	};
+	await onProgress(createStatusEvent(step, message));
 }
 
-export async function generateTranslations(
-	lyricsLines: string[],
-): Promise<TranslationLine[]> {
-	const numberedLyrics = lyricsLines
-		.map((line, index) => `${index}. ${line}`)
-		.join("\n");
-
-	const result = await generateObject({
-		model: fireworks(MODEL_ID),
-		prompt: [
-			"Translate these Japanese lyric lines into beginner-friendly English.",
-			"Return JSON only.",
-			"",
-			"Rules:",
-			"- return exactly one translation item per lyric line.",
-			"- keep the original field exactly equal to the input lyric line.",
-			"- preserve ordering.",
-			"- translation should be natural, clear English.",
-			"- do not skip lines.",
-			"",
-			"Example:",
-			'{"translations":[{"original":"Kimi ga motte kita manga","translation":"The manga that you brought"}]}',
-			"",
-			"Lyric lines:",
-			numberedLyrics,
-		].join("\n"),
-		schema: translationResultSchema,
-		schemaName: "song_translations",
-	});
-
-	if (result.object.translations.length !== lyricsLines.length) {
-		throw new Error(
-			`Expected ${lyricsLines.length} translations, got ${result.object.translations.length}.`,
-		);
-	}
-
-	return result.object.translations.map((entry, index) => {
-		const original = normalizeLine(entry.original);
-		const expectedOriginal = lyricsLines[index];
-
-		if (original !== expectedOriginal) {
-			throw new Error(
-				`Translation line ${index} did not preserve the original lyric text.`,
-			);
-		}
-
-		return {
-			id: index,
-			original,
-			translation: normalizeLine(entry.translation),
-		};
-	});
-}
-
-export async function generateExplanations(
-	translations: TranslationLine[],
-): Promise<ExplanationLine[]> {
-	const numberedTranslations = translations
-		.map(
-			(line) =>
-				`${line.id}. Original: ${line.original}\nTranslation: ${line.translation}`,
-		)
-		.join("\n\n");
-
-	const result = await generateObject({
-		model: fireworks(MODEL_ID),
-		prompt: [
-			"Create beginner-friendly explanations and vocabulary notes for these lyric lines.",
-			"Return JSON only.",
-			"",
-			"Rules:",
-			"- return exactly one explanation entry per translation id.",
-			"- translationId must match the numbered input ids.",
-			"- explain grammar/forms in simple English.",
-			"- vocabulary may be single words or useful phrase chunks.",
-			"- prefer chunks when they teach form better.",
-			"",
-			"Example A:",
-			"Original: Kimi ga motte kita manga",
-			"Translation: The manga that you brought",
-			"Good longFormExplanation: Kimi means 'you'. Particle ga marks kimi as subject. motte kita is from motte kuru (to bring), where motte is te-form of motsu and kita is past of kuru, so together it means 'brought'. manga is 'comic/manga'.",
-			'Good vocabularies: [{"original":"kimi","explanation":"you"},{"original":"ga","explanation":"subject marker"},{"original":"motte kita","explanation":"past form chunk from motte kuru, meaning brought"},{"original":"manga","explanation":"comic/manga"}]',
-			"",
-			"Example B:",
-			"Original: Nakanu you ni",
-			"Translation: So that I won't cry",
-			"Good longFormExplanation: Nakanu is a literary or soft negative form related to nakanai (not cry). you ni means 'so that' or 'in order to'. Together, nakanu you ni expresses purpose or prevention.",
-			'Good vocabularies: [{"original":"nakanu","explanation":"negative form meaning not cry"},{"original":"you ni","explanation":"so that / in order to"}]',
-			"",
-			"Lines:",
-			numberedTranslations,
-		].join("\n"),
-		schema: explanationResultSchema,
-		schemaName: "song_explanations",
-	});
-
-	if (result.object.vocabularyExplanations.length !== translations.length) {
-		throw new Error(
-			`Expected ${translations.length} explanation entries, got ${result.object.vocabularyExplanations.length}.`,
-		);
-	}
-
-	const expectedIds = new Set(translations.map((line) => line.id));
-	const seenIds = new Set<number>();
-
-	for (const entry of result.object.vocabularyExplanations) {
-		if (!expectedIds.has(entry.translationId)) {
-			throw new Error(`Unexpected translationId ${entry.translationId}.`);
-		}
-		if (seenIds.has(entry.translationId)) {
-			throw new Error(`Duplicate translationId ${entry.translationId}.`);
-		}
-		seenIds.add(entry.translationId);
-	}
-
-	return result.object.vocabularyExplanations.map((entry) => ({
-		longFormExplanation: normalizeLine(entry.longFormExplanation),
-		translationId: entry.translationId,
-		vocabularies: entry.vocabularies
-			.map((vocabulary) => ({
-				explanation: normalizeLine(vocabulary.explanation),
-				original: normalizeLine(vocabulary.original),
-			}))
-			.filter((vocabulary) => vocabulary.original && vocabulary.explanation),
-	}));
-}
-
-export async function saveGeneratedSong(
+async function saveGeneratedSong(
 	state: TeachState,
 	sourceUrl: string,
 ): Promise<SavedSongResult> {
 	const songMetadata = state.songMetadata;
 	if (!songMetadata) {
-		throw new Error("Song metadata missing after generation.");
+		throw new Error("Song metadata missing after agent run.");
 	}
 
 	return db.transaction(async (tx) => {
 		const [song] = await tx
 			.insert(songs)
 			.values({
-				artist: songMetadata.artist,
 				title: songMetadata.title,
+				artist: songMetadata.artist,
 			})
 			.returning({ id: songs.id });
 
@@ -379,9 +177,9 @@ export async function saveGeneratedSong(
 		const [run] = await tx
 			.insert(translationRuns)
 			.values({
-				modelId: MODEL_ID,
 				songId: song.id,
 				sourceUrl,
+				modelId: MODEL_ID,
 			})
 			.returning({ id: translationRuns.id });
 
@@ -390,9 +188,9 @@ export async function saveGeneratedSong(
 		}
 
 		const lineRows = state.lyricsLines.map((line, index) => ({
+			runId: run.id,
 			lineIndex: index,
 			originalText: line,
-			runId: run.id,
 		}));
 
 		const insertedLines = await tx
@@ -415,10 +213,10 @@ export async function saveGeneratedSong(
 			}
 
 			return {
-				longFormExplanation:
-					state.vocabularyExplanations[line.id]?.longFormExplanation ?? "",
 				lyricLineId,
 				translationText: line.translation,
+				longFormExplanation:
+					state.vocabularyExplanations[line.id]?.longFormExplanation ?? "",
 			};
 		});
 
@@ -453,11 +251,11 @@ export async function saveGeneratedSong(
 				);
 			}
 
-			return entry.vocabularies.map((vocabulary, vocabIndex) => ({
-				explanation: vocabulary.explanation,
-				originalText: vocabulary.original,
+			return entry.vocabularies.map((vocab, vocabIndex) => ({
 				translationLineId,
 				vocabIndex,
+				originalText: vocab.original,
+				explanation: vocab.explanation,
 			}));
 		});
 
@@ -472,7 +270,7 @@ export async function saveGeneratedSong(
 			}
 		}
 
-		return { runId: run.id, songId: song.id };
+		return { songId: song.id, runId: run.id };
 	});
 }
 
@@ -553,18 +351,13 @@ export async function buildFlashcardsForSong(songId: number): Promise<number> {
 	});
 }
 
-export async function* generateSongFromUrl(
+export async function generateSongFromUrl(
 	rawUrl: string,
-): AsyncGenerator<SongGenerationStreamEvent> {
+	onProgress?: SongGenerationProgressCallback,
+): Promise<{ flashcardCount: number; runId: number; songId: number }> {
 	const url = rawUrl.trim();
 	if (!url) {
 		throw new Error("A song URL is required.");
-	}
-
-	try {
-		new URL(url);
-	} catch {
-		throw new Error("Please enter a valid URL.");
 	}
 
 	if (!process.env.FIREWORKS_API_KEY) {
@@ -573,47 +366,351 @@ export async function* generateSongFromUrl(
 		);
 	}
 
-	yield createStatusEvent("fetching_song_lyrics", "Fetching song lyrics...");
+	await reportStatus(
+		onProgress,
+		"fetching_song_lyrics",
+		"Fetching song lyrics...",
+	);
+
 	const cleanTree = await extractCleanHtmlTree(url, {
 		maxDepth: 20,
 		maxNodes: 3000,
 	});
+	const cleanYaml = truncateForPrompt(
+		cleanHtmlTreeToYaml(cleanTree),
+		CLEAN_YAML_PROMPT_CHAR_LIMIT,
+	);
+	const textSegments = compactSegments(
+		collectOrderedTextSegments(cleanTree.nodes, TEXT_SEGMENT_LIMIT * 2),
+		TEXT_SEGMENT_LIMIT,
+	);
 
-	if (isChallengePage(cleanTree)) {
-		throw new Error(
-			"Genius blocked automated access for this request. Try again later or use another lyrics source.",
-		);
-	}
+	logGenerationDebug("html_extracted", {
+		pageTitle: cleanTree.title,
+		pageUrl: cleanTree.url,
+		nodeCount: cleanTree.nodes.length,
+	});
 
-	const extraction = await extractMetadataAndLyrics(cleanTree);
 	const state: TeachState = {
-		lyricsLines: extraction.lyricsLines,
-		songMetadata: extraction.songMetadata,
+		songMetadata: null,
+		lyricsLines: [],
 		translations: [],
 		vocabularyExplanations: [],
 	};
 
-	yield createStatusEvent(
-		"generating_translation",
-		"Generating translation...",
-	);
-	state.translations = await generateTranslations(state.lyricsLines);
+	let hasReportedTranslation = false;
+	let hasReportedExplanations = false;
 
-	yield createStatusEvent(
-		"generating_explanations",
-		"Generating explanations and vocabularies...",
-	);
-	state.vocabularyExplanations = await generateExplanations(state.translations);
+	const agent = new ToolLoopAgent({
+		model: fireworks(MODEL_ID),
+		stopWhen: stepCountIs(12),
+		instructions: [
+			"You are a strict Japanese-learning content generator that MUST update state via tools.",
+			"Use tool calls, not plain text, to produce the result.",
+			"Hard requirements:",
+			"- Call set_song_metadata_state first, exactly once.",
+			"- Call set_lyrics_lines_state second, exactly once.",
+			"- Call set_translation_state third, exactly once.",
+			"- Call set_vocab_explanations_state fourth, exactly once.",
+			"- Do not skip lyric lines.",
+			"- translationId is zero-based and must match the id in state.translations.",
+			"- Keep original text unchanged for lyrics and translations.",
+			"- Explanations must teach beginner-friendly grammar/form chunks.",
+		].join("\n"),
+		tools: {
+			set_song_metadata_state: tool({
+				description: "Set song metadata (title and artist) from page content.",
+				inputSchema: z.object({ songMetadata: songMetadataSchema }),
+				execute: async ({ songMetadata }) => {
+					logGenerationDebug("tool_call", {
+						tool: "set_song_metadata_state",
+						songMetadata,
+					});
+					const title = normalizeLine(songMetadata.title);
+					const artist = normalizeLine(songMetadata.artist);
+					if (!title || !artist) {
+						return "title and artist are required and cannot be empty.";
+					}
 
-	yield createStatusEvent("generating_flashcards", "Generating flashcards...");
+					state.songMetadata = { title, artist };
+					return state;
+				},
+			}),
+			set_lyrics_lines_state: tool({
+				description:
+					"Set cleaned lyric lines extracted from the page. Keep order, remove navigation/noise/metadata.",
+				inputSchema: z.object({ lyricsLines: z.array(z.string()) }),
+				execute: async ({ lyricsLines }) => {
+					logGenerationDebug("tool_call", {
+						tool: "set_lyrics_lines_state",
+						lyricsLineCount: lyricsLines.length,
+					});
+					if (!state.songMetadata) {
+						return "Please call set_song_metadata_state first before using this tool.";
+					}
+
+					const normalized = lyricsLines
+						.map(normalizeLine)
+						.filter((line) => line.length > 0);
+
+					if (normalized.length === 0) {
+						return "No lyric lines provided. Provide at least one lyric line.";
+					}
+
+					state.lyricsLines = normalized;
+					state.translations = [];
+					state.vocabularyExplanations = [];
+					return state;
+				},
+			}),
+			set_translation_state: tool({
+				description:
+					"Set translation state from lyric lines. Must include exactly one translation per lyric line in order.",
+				inputSchema: z.object({
+					translations: z.array(translationLineSchema),
+				}),
+				execute: async ({ translations }) => {
+					logGenerationDebug("tool_call", {
+						tool: "set_translation_state",
+						translationCount: translations.length,
+					});
+					if (!state.songMetadata) {
+						return "Please call set_song_metadata_state first before using this tool.";
+					}
+					if (state.lyricsLines.length === 0) {
+						return "Please call set_lyrics_lines_state first before using this tool.";
+					}
+					if (translations.length !== state.lyricsLines.length) {
+						return `Please provide exactly ${state.lyricsLines.length} translation entries (one per lyric line).`;
+					}
+
+					for (let i = 0; i < translations.length; i += 1) {
+						const expectedOriginal = state.lyricsLines[i];
+						const original = normalizeLine(translations[i].original);
+						if (original !== expectedOriginal) {
+							return `translations[${i}].original must exactly match lyricsLines[${i}].`;
+						}
+					}
+
+					if (!hasReportedTranslation) {
+						hasReportedTranslation = true;
+						await reportStatus(
+							onProgress,
+							"generating_translation",
+							"Generating translation...",
+						);
+					}
+
+					state.translations = translations.map((line, id) => ({
+						id,
+						original: normalizeLine(line.original),
+						translation: normalizeLine(line.translation),
+					}));
+					state.vocabularyExplanations = [];
+					return state;
+				},
+			}),
+			set_vocab_explanations_state: tool({
+				description:
+					"Set vocabulary explanations for each translation line. Must include exactly one entry per translation id.",
+				inputSchema: z.object({
+					vocabularyExplanations: z.array(explanationSchema),
+				}),
+				execute: async ({ vocabularyExplanations }) => {
+					logGenerationDebug("tool_call", {
+						tool: "set_vocab_explanations_state",
+						explanationCount: vocabularyExplanations.length,
+					});
+					if (state.translations.length === 0) {
+						return "Please call set_translation_state first before using this tool.";
+					}
+
+					if (vocabularyExplanations.length !== state.translations.length) {
+						return `Please provide exactly ${state.translations.length} explanation entries (one per translation line).`;
+					}
+
+					const validIds = new Set(state.translations.map((line) => line.id));
+					const seen = new Set<number>();
+
+					for (const entry of vocabularyExplanations) {
+						if (!validIds.has(entry.translationId)) {
+							return `Invalid translationId ${entry.translationId}. Use ids from state.translations.`;
+						}
+						if (seen.has(entry.translationId)) {
+							return `Duplicate translationId ${entry.translationId}. Provide exactly one explanation per translation line.`;
+						}
+						seen.add(entry.translationId);
+					}
+
+					const missingIds = state.translations
+						.map((line) => line.id)
+						.filter((id) => !seen.has(id));
+					if (missingIds.length > 0) {
+						return `Missing explanation entries for translationId: ${missingIds.join(", ")}`;
+					}
+
+					if (!hasReportedExplanations) {
+						hasReportedExplanations = true;
+						await reportStatus(
+							onProgress,
+							"generating_explanations",
+							"Generating explanations and vocabularies...",
+						);
+					}
+
+					state.vocabularyExplanations = vocabularyExplanations.map(
+						(entry) => ({
+							translationId: entry.translationId,
+							longFormExplanation: normalizeLine(entry.longFormExplanation),
+							vocabularies: entry.vocabularies
+								.map((vocab) => ({
+									original: normalizeLine(vocab.original),
+									explanation: normalizeLine(vocab.explanation),
+								}))
+								.filter((vocab) => vocab.original && vocab.explanation),
+						}),
+					);
+
+					return state;
+				},
+			}),
+		},
+	});
+
+	const indexedSegments = textSegments
+		.map((line, index) => `${index + 1}. ${line}`)
+		.join("\n");
+
+	const prompt = [
+		"Task: generate Japanese-learning output from this webpage structure.",
+		"You must call tools in this order:",
+		"1) set_song_metadata_state",
+		"2) set_lyrics_lines_state",
+		"3) set_translation_state",
+		"4) set_vocab_explanations_state",
+		"",
+		"Important sequencing constraints:",
+		"- Do not skip any tool.",
+		"- Do not call tools out of order.",
+		"- Do not finalize early.",
+		"",
+		"Metadata extraction guidance:",
+		"- songMetadata.title should be the song title only.",
+		"- songMetadata.artist should be the artist only.",
+		"- Remove site suffixes like '| Genius Lyrics', 'Lyrics', or branding text.",
+		"",
+		"Rules for lyrics extraction:",
+		"- Extract only lyric lines in singing order.",
+		"- Remove numbering, metadata labels, menu text, ads, and unrelated page text.",
+		"- Remove section headers like [Verse], [Chorus], [Bridge], [Outro].",
+		"- Remove UI strings like Share, Embed, Contributors, About, Translations tabs.",
+		"- Keep repeated chorus lines if they appear in lyrics.",
+		"- Keep each lyric line as a single cleaned string.",
+		"- Keep romanized Japanese lines exactly as they appear (except trimming whitespace and numbering).",
+		"",
+		"Rules for translation and teaching:",
+		"- One translation per lyric line, preserve exact original line text.",
+		"- One explanation entry per translation line.",
+		"- Explain grammar/forms in beginner-friendly plain English.",
+		"- Vocabulary can be words or phrase chunks.",
+		"- Prefer phrase chunks when they teach form better (e.g., motte kita, you ni).",
+		"- longFormExplanation should explain what each important chunk does in the sentence.",
+		"",
+		"Few-shot example A (metadata + lyrics extraction):",
+		"Input page title: Sayuri - Tower of Flower Lyrics (Romanized) | Hana no Tou [花の塔] - Lyrical Nonsense",
+		"Input fragments:",
+		"1. Alternate Title: Hana no Tou",
+		"2. Artist: Sayuri",
+		"3. 1. Kimi ga motte kita manga",
+		"4. 2. Kureta shiranai namae no ohana",
+		"5. Share",
+		"Expected tool payloads:",
+		'set_song_metadata_state -> {"songMetadata":{"title":"Tower of Flower","artist":"Sayuri"}}',
+		'set_lyrics_lines_state -> {"lyricsLines":["Kimi ga motte kita manga","Kureta shiranai namae no ohana"]}',
+		"",
+		"Few-shot example B (teaching style you MUST follow):",
+		"Original: Kimi ga motte kita manga",
+		"Translation: The manga that you brought",
+		"Good longFormExplanation: \"Kimi means 'you'. Particle ga marks kimi as subject. motte kita is from motte kuru (to bring), where motte is te-form of motsu and kita is past of kuru, so together it means 'brought'. manga is 'comic/manga'.\"",
+		'Good vocabularies: [{"original":"kimi","explanation":"you"},{"original":"ga","explanation":"subject marker"},{"original":"motte kita","explanation":"past form chunk from motte kuru, meaning \'brought\'"},{"original":"manga","explanation":"comic/manga"}]',
+		"",
+		"Few-shot example C (teaching style you MUST follow):",
+		"Original: Nakanu you ni",
+		"Translation: So that I won't cry",
+		"Good longFormExplanation: \"Nakanu is a literary/soft negative form related to nakanai (not cry). you ni means 'so that' or 'in order to'. As a chunk, nakanu you ni expresses purpose/prevention: doing something so crying does not happen.\"",
+		'Good vocabularies: [{"original":"nakanu","explanation":"negative form meaning \'not cry\'"},{"original":"you ni","explanation":"so that / in order to"}]',
+		"",
+		`Page URL: ${cleanTree.url}`,
+		`Page title: ${cleanTree.title}`,
+		"",
+		"Clean text fragments (ordered):",
+		indexedSegments,
+		"",
+		"Clean HTML YAML snapshot:",
+		cleanYaml,
+	].join("\n");
+
+	logGenerationDebug("agent_generate_start", {
+		modelId: MODEL_ID,
+		promptLength: prompt.length,
+		promptPreview: prompt.slice(0, 600),
+	});
+
+	try {
+		await agent.generate({ prompt });
+		logGenerationDebug("agent_generate_success", {
+			hasSongMetadata: Boolean(state.songMetadata),
+			lyricsLineCount: state.lyricsLines.length,
+			translationCount: state.translations.length,
+			explanationCount: state.vocabularyExplanations.length,
+		});
+	} catch (error) {
+		console.error("[song-generation:agent_generate_failure]", {
+			error: formatGenerationError(error),
+			modelId: MODEL_ID,
+			promptLength: prompt.length,
+			promptPreview: prompt.slice(0, 600),
+			stateSnapshot: {
+				hasSongMetadata: Boolean(state.songMetadata),
+				lyricsLineCount: state.lyricsLines.length,
+				translationCount: state.translations.length,
+				explanationCount: state.vocabularyExplanations.length,
+			},
+		});
+		throw error;
+	}
+
+	if (!state.songMetadata) {
+		throw new Error("Agent did not set songMetadata state.");
+	}
+	if (state.lyricsLines.length === 0) {
+		throw new Error("Agent did not set lyricsLines state.");
+	}
+	if (state.translations.length !== state.lyricsLines.length) {
+		throw new Error(
+			`Agent did not set full translations state. Expected ${state.lyricsLines.length}, got ${state.translations.length}.`,
+		);
+	}
+	if (state.vocabularyExplanations.length !== state.lyricsLines.length) {
+		throw new Error(
+			`Agent did not set full vocabulary explanations state. Expected ${state.lyricsLines.length}, got ${state.vocabularyExplanations.length}.`,
+		);
+	}
+
 	const saved = await saveGeneratedSong(state, cleanTree.url);
+	state.dbSongId = saved.songId;
+	state.dbRunId = saved.runId;
+
+	await reportStatus(
+		onProgress,
+		"generating_flashcards",
+		"Generating flashcards...",
+	);
 	const flashcardCount = await buildFlashcardsForSong(saved.songId);
 
-	yield {
+	return {
 		flashcardCount,
 		runId: saved.runId,
 		songId: saved.songId,
-		timestamp: Date.now(),
-		type: "done",
 	};
 }

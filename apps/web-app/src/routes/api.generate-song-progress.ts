@@ -49,9 +49,8 @@ export const Route = createFileRoute("/api/generate-song-progress")({
 						sendEvent("open", { message: "SSE connection established." });
 
 						try {
-							for await (const event of generateSongFromUrl(sourceUrl)) {
+							const result = await generateSongFromUrl(sourceUrl, (event) => {
 								if (request.signal.aborted) {
-									closeStream();
 									return;
 								}
 
@@ -60,22 +59,18 @@ export const Route = createFileRoute("/api/generate-song-progress")({
 										message: event.message,
 										step: event.step,
 									});
-									continue;
 								}
+							});
 
-								if (event.type === "done") {
-									sendEvent("done", {
-										flashcardCount: event.flashcardCount,
-										runId: event.runId,
-										songId: event.songId,
-									});
-									closeStream();
-									return;
-								}
+							if (request.signal.aborted) {
+								closeStream();
+								return;
 							}
 
-							sendEvent("generation-error", {
-								message: "Song generation finished without returning a song.",
+							sendEvent("done", {
+								flashcardCount: result.flashcardCount,
+								runId: result.runId,
+								songId: result.songId,
 							});
 							closeStream();
 						} catch (error) {

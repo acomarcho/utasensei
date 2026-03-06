@@ -4,13 +4,7 @@ import {
 	useMotionValue,
 	useTransform,
 } from "motion/react";
-import {
-	Link,
-	Outlet,
-	useLocation,
-	useNavigate,
-	useParams,
-} from "@tanstack/react-router";
+import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
 	ArrowRight,
@@ -25,12 +19,11 @@ import {
 	Sparkles,
 	X,
 } from "lucide-react";
-import {
-	buildMockFlashcardRun,
-	getSongById,
-	getSongsList,
-	type MockFlashcard,
-	type SongLesson,
+import type {
+	Flashcard,
+	FlashcardRun,
+	SongLesson,
+	SongListItem,
 } from "~/data/ai-studio";
 import { NotFound } from "~/components/NotFound";
 
@@ -67,12 +60,12 @@ function parseCardFace(raw: string): ParsedCardFace {
 function SidebarContent({
 	onClose,
 	selectedSongId,
+	songsList,
 }: {
 	onClose: () => void;
 	selectedSongId: number | null;
+	songsList: SongListItem[];
 }) {
-	const songsList = getSongsList();
-
 	return (
 		<>
 			<div className="neo-border-b flex items-center justify-between p-6">
@@ -183,7 +176,7 @@ function ReviewCardFace({
 	onForget,
 	onRemember,
 }: {
-	card: MockFlashcard;
+	card: Flashcard;
 	disabled?: boolean;
 	isBack: boolean;
 	onFlip: () => void;
@@ -245,7 +238,7 @@ function ReviewTopCard({
 	onForget,
 	onRemember,
 }: {
-	card: MockFlashcard;
+	card: Flashcard;
 	isFlipped: boolean;
 	swipeDirection: ReviewAction | null;
 	onFlip: () => void;
@@ -394,7 +387,7 @@ function ReviewPreviewCard({
 	card,
 	depth,
 }: {
-	card: MockFlashcard;
+	card: Flashcard;
 	depth: number;
 }) {
 	const parsedFace = parseCardFace(card.front);
@@ -460,7 +453,7 @@ function FlashcardReviewModal({
 	onRemember: () => void;
 	onReset: () => void;
 	rememberedCount: number;
-	reviewLeft: MockFlashcard[];
+	reviewLeft: Flashcard[];
 	songTitle: string;
 	swipeDirection: ReviewAction | null;
 	totalCards: number;
@@ -635,12 +628,14 @@ function FlashcardReviewModal({
 	);
 }
 
-export function AiStudioShell() {
+export function AiStudioShell({ songsList }: { songsList: SongListItem[] }) {
 	const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 	const pathname = useLocation({ select: (state) => state.pathname });
 	const pathMatch = pathname.match(/^\/song\/(\d+)$/);
 	const selectedSongId = pathMatch ? Number(pathMatch[1]) : null;
-	const currentSong = selectedSongId ? getSongById(selectedSongId) : null;
+	const selectedSong = selectedSongId
+		? (songsList.find((song) => song.id === selectedSongId) ?? null)
+		: null;
 
 	return (
 		<div className="neo-app flex h-screen overflow-hidden font-sans">
@@ -667,6 +662,7 @@ export function AiStudioShell() {
 							<SidebarContent
 								onClose={() => setIsSidebarOpen(false)}
 								selectedSongId={selectedSongId}
+								songsList={songsList}
 							/>
 						</motion.aside>
 					</>
@@ -677,6 +673,7 @@ export function AiStudioShell() {
 				<SidebarContent
 					onClose={() => setIsSidebarOpen(false)}
 					selectedSongId={selectedSongId}
+					songsList={songsList}
 				/>
 			</aside>
 
@@ -690,7 +687,7 @@ export function AiStudioShell() {
 						<Menu className="h-6 w-6" />
 					</button>
 					<h1 className="truncate text-xl font-bold uppercase">
-						{currentSong ? currentSong.song.title : "New Song"}
+						{selectedSong ? selectedSong.title : "New Song"}
 					</h1>
 				</header>
 				<div className="flex-1 overflow-y-auto">
@@ -754,15 +751,21 @@ export function NewSongPage() {
 	);
 }
 
-function SongDetailView({ songLesson }: { songLesson: SongLesson }) {
-	const flashcardRun = useMemo(
-		() => buildMockFlashcardRun(songLesson),
-		[songLesson],
+export function SongDetailPage({
+	flashcardRun,
+	songLesson,
+}: {
+	flashcardRun: FlashcardRun | null;
+	songLesson: SongLesson | null;
+}) {
+	const safeFlashcardRun = useMemo(
+		() => flashcardRun ?? { cards: [], count: 0, runId: 0, songId: 0 },
+		[flashcardRun],
 	);
 	const [expandedLines, setExpandedLines] = useState<Set<number>>(new Set());
 	const [isReviewOpen, setIsReviewOpen] = useState(false);
-	const [reviewLeft, setReviewLeft] = useState<MockFlashcard[]>(
-		() => flashcardRun.cards,
+	const [reviewLeft, setReviewLeft] = useState<Flashcard[]>(
+		() => safeFlashcardRun.cards,
 	);
 	const [rememberedCardIds, setRememberedCardIds] = useState<number[]>([]);
 	const [forgottenCount, setForgottenCount] = useState(0);
@@ -775,12 +778,12 @@ function SongDetailView({ songLesson }: { songLesson: SongLesson }) {
 	useEffect(() => {
 		setExpandedLines(new Set());
 		setIsReviewOpen(false);
-		setReviewLeft(flashcardRun.cards);
+		setReviewLeft(safeFlashcardRun.cards);
 		setRememberedCardIds([]);
 		setForgottenCount(0);
 		setIsCardFlipped(false);
 		setSwipeDirection(null);
-	}, [flashcardRun]);
+	}, [safeFlashcardRun]);
 
 	useEffect(() => {
 		return () => {
@@ -811,6 +814,18 @@ function SongDetailView({ songLesson }: { songLesson: SongLesson }) {
 			window.removeEventListener("keydown", handleKeyDown);
 		};
 	}, [isReviewOpen]);
+
+	if (!songLesson) {
+		return (
+			<div className="p-4 md:p-8 lg:p-12">
+				<div className="mx-auto max-w-4xl">
+					<div className="neo-card-no-hover p-6 md:p-8">
+						<NotFound>Song not found.</NotFound>
+					</div>
+				</div>
+			</div>
+		);
+	}
 
 	const toggleLine = (index: number) => {
 		setExpandedLines((currentValue) => {
@@ -854,7 +869,7 @@ function SongDetailView({ songLesson }: { songLesson: SongLesson }) {
 	};
 
 	const resetReviewSession = () => {
-		setReviewLeft(flashcardRun.cards);
+		setReviewLeft(safeFlashcardRun.cards);
 		setRememberedCardIds([]);
 		setForgottenCount(0);
 		setSwipeDirection(null);
@@ -882,7 +897,7 @@ function SongDetailView({ songLesson }: { songLesson: SongLesson }) {
 									onClick={() => setIsReviewOpen(true)}
 									type="button"
 								>
-									Review {flashcardRun.count} flashcards
+									Review {safeFlashcardRun.count} flashcards
 								</button>
 								<div className="neo-card-no-hover px-4 py-2 text-sm font-bold uppercase neo-text-muted md:self-auto">
 									Source: Genius
@@ -992,27 +1007,8 @@ function SongDetailView({ songLesson }: { songLesson: SongLesson }) {
 				reviewLeft={reviewLeft}
 				songTitle={songLesson.song.title}
 				swipeDirection={swipeDirection}
-				totalCards={flashcardRun.count}
+				totalCards={safeFlashcardRun.count}
 			/>
 		</>
 	);
-}
-
-export function SongPage() {
-	const { songId } = useParams({ from: "/song/$songId" });
-	const songLesson = getSongById(Number(songId));
-
-	if (!songLesson) {
-		return (
-			<div className="p-4 md:p-8 lg:p-12">
-				<div className="mx-auto max-w-4xl">
-					<div className="neo-card-no-hover p-6 md:p-8">
-						<NotFound>Song not found.</NotFound>
-					</div>
-				</div>
-			</div>
-		);
-	}
-
-	return <SongDetailView songLesson={songLesson} />;
 }

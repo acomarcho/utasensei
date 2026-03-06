@@ -90,10 +90,14 @@ function Conversation({
 }) {
 	const [input, setInput] = useState("");
 	const endRef = useRef<HTMLDivElement>(null);
+	const prevMessageCount = useRef(thread.messages.length);
 
-	useEffect(() => {
-		endRef.current?.scrollIntoView({ behavior: "smooth" });
-	});
+	if (thread.messages.length !== prevMessageCount.current) {
+		prevMessageCount.current = thread.messages.length;
+		queueMicrotask(() => {
+			endRef.current?.scrollIntoView({ behavior: "smooth" });
+		});
+	}
 
 	const handleSubmit = (e: React.FormEvent) => {
 		e.preventDefault();

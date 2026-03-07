@@ -8,7 +8,8 @@ import { runSongs } from "./commands/songs";
 import { runTranslateSong } from "./commands/translate-song";
 import {
 	DEFAULT_SONG_GENERATION_MODEL_ID,
-	isSongGenerationModelId,
+	parseSongGenerationModelId,
+	SONG_GENERATION_MODEL_ALIASES,
 	SONG_GENERATION_MODEL_IDS,
 	type SongGenerationModelId,
 } from "./lib/song-generation-models";
@@ -16,7 +17,7 @@ import {
 const HELP_TEXT = [
 	"Usage:",
 	"  pnpm cli extract-html <url>",
-	"  pnpm cli translate-song <url> [--model <modelId>]",
+	"  pnpm cli translate-song <url> [--model <model>]",
 	"  pnpm cli songs [id]",
 	"  pnpm cli songs delete <id>",
 	"  pnpm cli flashcards build <songId>",
@@ -29,7 +30,7 @@ const HELP_TEXT = [
 	"Examples:",
 	"  pnpm cli extract-html https://genius.com/Genius-romanizations-rokudenashi-one-voice-romanized-lyrics",
 	"  pnpm cli translate-song https://www.lyrical-nonsense.com/global/lyrics/sayuri/hana-no-tou/",
-	`  pnpm cli translate-song https://www.lyrical-nonsense.com/global/lyrics/sayuri/hana-no-tou/ --model ${SONG_GENERATION_MODEL_IDS[1]}`,
+	`  pnpm cli translate-song https://www.lyrical-nonsense.com/global/lyrics/sayuri/hana-no-tou/ --model ${SONG_GENERATION_MODEL_ALIASES[1]}`,
 	"  pnpm cli songs",
 	"  pnpm cli songs 1",
 	"  pnpm cli songs delete 1",
@@ -102,13 +103,14 @@ function parseTranslateSongArgs(args: string[]): {
 		throw new Error(`Too many arguments for translate-song.\n\n${HELP_TEXT}`);
 	}
 
-	if (!isSongGenerationModelId(rawModelId)) {
+	const modelId = parseSongGenerationModelId(rawModelId);
+	if (!modelId) {
 		throw new Error(
-			`Invalid model "${rawModelId}". Allowed values: ${SONG_GENERATION_MODEL_IDS.join(", ")}.\n\n${HELP_TEXT}`,
+			`Invalid model "${rawModelId}". Allowed values: ${SONG_GENERATION_MODEL_ALIASES.join(", ")} (aliases) or ${SONG_GENERATION_MODEL_IDS.join(", ")} (full ids).\n\n${HELP_TEXT}`,
 		);
 	}
 
-	return { modelId: rawModelId, url };
+	return { modelId, url };
 }
 
 function parsePositiveInteger(rawValue: string, label: string): number {

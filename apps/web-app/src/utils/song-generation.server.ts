@@ -4,7 +4,7 @@ import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { Output, generateText } from "ai";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import type { SongGenerationStreamEvent } from "~/data/ai-studio";
+import type { SongGenerationStreamEvent } from "~/data/songs";
 import { db } from "~/utils/db/client.server";
 import {
 	flashcards,

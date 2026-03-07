@@ -4,7 +4,7 @@ import type {
 	SongLesson,
 	SongListItem,
 	SongPageData,
-} from "~/data/ai-studio";
+} from "~/data/songs";
 import { db } from "~/utils/db/client.server";
 import {
 	chatMessages,

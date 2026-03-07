@@ -6,7 +6,7 @@ import {
 	useTransform,
 } from "motion/react";
 import { useState } from "react";
-import type { Flashcard } from "~/data/ai-studio";
+import type { Flashcard } from "~/data/songs";
 
 const REVIEW_STACK_LIMIT = 5;
 const REVIEW_DRAG_THRESHOLD = 110;

@@ -2,7 +2,7 @@ import { Outlet, useLocation } from "@tanstack/react-router";
 import { Menu } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
-import type { SongListItem } from "~/data/ai-studio";
+import type { SongListItem } from "~/data/songs";
 import { SongsSidebar } from "~/components/songs/songs-sidebar";
 
 export function SongsShell({ songsList }: { songsList: SongListItem[] }) {

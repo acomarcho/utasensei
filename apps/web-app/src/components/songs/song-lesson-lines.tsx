@@ -1,6 +1,6 @@
 import { BookOpen, ChevronDown } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import type { SongLine } from "~/data/ai-studio";
+import type { SongLine } from "~/data/songs";
 
 export function SongLessonLines({
 	expandedLines,

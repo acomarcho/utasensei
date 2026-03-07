@@ -13,7 +13,7 @@ import type {
 	SongChatThread,
 	SongChatThreadSummary,
 	SongPageData,
-} from "~/data/ai-studio";
+} from "~/data/songs";
 import {
 	deleteSongChatThreadFn,
 	sendSongChatMessageFn,

@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Music, Play, Search, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { SongListItem } from "~/data/ai-studio";
+import type { SongListItem } from "~/data/songs";
 
 const EMPTY_SCROLL_INDICATOR = {
 	hasOverflow: false,

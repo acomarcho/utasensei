@@ -3,7 +3,7 @@ import {
 	queryOptions,
 	type Updater,
 } from "@tanstack/react-query";
-import type { SongPageData } from "~/data/ai-studio";
+import type { SongPageData } from "~/data/songs";
 import { getSongPageDataFn, getSongsListFn } from "~/utils/songs.functions";
 
 export const songsListQueryKey = ["songs", "list"] as const;

@@ -1,7 +1,7 @@
 import { fireworks } from "@ai-sdk/fireworks";
 import { streamText } from "ai";
 import { desc, eq, sql } from "drizzle-orm";
-import type { SongChatMessage, SongChatThread } from "~/data/ai-studio";
+import type { SongChatMessage, SongChatThread } from "~/data/songs";
 import { db } from "~/utils/db/client.server";
 import {
 	chatMessages,

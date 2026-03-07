@@ -7,7 +7,7 @@ import { DeleteSongModal } from "~/components/songs/delete-song-modal";
 import { FlashcardReviewModal } from "~/components/songs/review/flashcard-review-modal";
 import { SongChat } from "~/components/songs/song-chat";
 import { SongLessonLines } from "~/components/songs/song-lesson-lines";
-import type { Flashcard, FlashcardRun, SongLesson } from "~/data/ai-studio";
+import type { Flashcard, FlashcardRun, SongLesson } from "~/data/songs";
 import { deleteSongFn } from "~/utils/songs.functions";
 import {
 	songPageDataQueryKey,

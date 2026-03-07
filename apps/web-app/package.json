@@ -15,6 +15,7 @@
 	"dependencies": {
 		"@ai-sdk/fireworks": "^2.0.36",
 		"@libsql/client": "^0.17.0",
+		"@mastra/core": "^1.10.0",
 		"@tanstack/react-query": "^5.90.21",
 		"@tanstack/react-router": "^1.166.2",
 		"@tanstack/react-router-devtools": "^1.166.2",

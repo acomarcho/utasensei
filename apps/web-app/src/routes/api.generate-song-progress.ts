@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { generateSongFromUrl } from "~/utils/song-generation.server";
 import {
 	DEFAULT_SONG_GENERATION_MODEL_ID,
-	isSongGenerationModelId,
+	parseSongGenerationModelId,
 } from "~/utils/song-generation-models";
 
 function formatSseEvent(event: string, data: unknown) {
@@ -19,6 +19,7 @@ export const Route = createFileRoute("/api/generate-song-progress")({
 				const rawModelId =
 					url.searchParams.get("model")?.trim() ??
 					DEFAULT_SONG_GENERATION_MODEL_ID;
+				const modelId = parseSongGenerationModelId(rawModelId);
 
 				const stream = new ReadableStream({
 					async start(controller) {
@@ -53,7 +54,7 @@ export const Route = createFileRoute("/api/generate-song-progress")({
 							return;
 						}
 
-						if (!isSongGenerationModelId(rawModelId)) {
+						if (!modelId) {
 							sendEvent("generation-error", {
 								message: "Invalid model selection.",
 							});
@@ -65,7 +66,7 @@ export const Route = createFileRoute("/api/generate-song-progress")({
 
 						try {
 							const result = await generateSongFromUrl(sourceUrl, {
-								modelId: rawModelId,
+								modelId,
 								onProgress: (event) => {
 									if (request.signal.aborted) {
 										return;

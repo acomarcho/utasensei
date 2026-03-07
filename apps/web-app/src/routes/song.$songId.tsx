@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { SongDetailPage } from "~/components/ai-studio";
+import { SongDetailPage } from "~/components/songs/song-detail-page";
 import { songPageDataQueryOptions } from "~/utils/songs.query-options";
 
 export const Route = createFileRoute("/song/$songId")({

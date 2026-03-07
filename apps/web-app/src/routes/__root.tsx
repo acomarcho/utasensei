@@ -7,7 +7,7 @@ import {
 } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import type { ReactNode } from "react";
-import { AiStudioShell } from "~/components/ai-studio";
+import { SongsShell } from "~/components/songs/songs-shell";
 import { DefaultCatchBoundary } from "~/components/DefaultCatchBoundary";
 import { NotFound } from "~/components/NotFound";
 import appCss from "~/styles/app.css?url";
@@ -62,7 +62,7 @@ function RootComponent() {
 
 	return (
 		<RootDocument>
-			<AiStudioShell songsList={songsList} />
+			<SongsShell songsList={songsList} />
 		</RootDocument>
 	);
 }

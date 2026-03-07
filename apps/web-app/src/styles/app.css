@@ -107,6 +107,11 @@
   box-shadow: var(--shadow-offset) var(--shadow-offset) 0px 0px var(--shadow-color);
 }
 
+.neo-search-input::-webkit-search-cancel-button {
+  margin-left: 0.5rem;
+  margin-right: 0.25rem;
+}
+
 .neo-border {
   border: var(--border-width) solid var(--border-color);
 }

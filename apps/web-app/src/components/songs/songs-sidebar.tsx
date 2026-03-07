@@ -1,6 +1,12 @@
 import { Link } from "@tanstack/react-router";
 import { Music, Play, Search, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+	useCallback,
+	useDeferredValue,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import type { SongListItem } from "~/data/songs";
 
 const EMPTY_SCROLL_INDICATOR = {
@@ -30,10 +36,21 @@ export function SongsSidebar({
 	songsList: SongListItem[];
 }) {
 	const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+	const [libraryQuery, setLibraryQuery] = useState("");
+	const deferredLibraryQuery = useDeferredValue(libraryQuery);
 	const [scrollIndicator, setScrollIndicator] = useState(
 		EMPTY_SCROLL_INDICATOR,
 	);
-	const scrollContentSignature = `${selectedSongId ?? "none"}:${songsList
+	const normalizedLibraryQuery = deferredLibraryQuery
+		.trim()
+		.toLocaleLowerCase();
+	const filteredSongs = normalizedLibraryQuery
+		? songsList.filter((song) => {
+				const searchTarget = `${song.title} ${song.artist}`.toLocaleLowerCase();
+				return searchTarget.includes(normalizedLibraryQuery);
+			})
+		: songsList;
+	const scrollContentSignature = `${selectedSongId ?? "none"}:${normalizedLibraryQuery}:${filteredSongs
 		.map((song) => `${song.id}:${song.title}:${song.artist}`)
 		.join("|")}`;
 
@@ -132,30 +149,52 @@ export function SongsSidebar({
 					<h2 className="mb-4 text-sm font-bold tracking-widest uppercase neo-text-muted">
 						Your Library
 					</h2>
+					<div className="relative mb-4">
+						<Search
+							aria-hidden="true"
+							className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 neo-text-muted"
+						/>
+						<input
+							aria-label="Search your library"
+							className="neo-input neo-search-input w-full !pl-10 text-sm"
+							onChange={(event) => setLibraryQuery(event.target.value)}
+							placeholder="Search your library"
+							type="search"
+							value={libraryQuery}
+						/>
+					</div>
 					<div className="space-y-3">
-						{songsList.map((song) => (
-							<Link
-								className={`flex w-full items-center gap-3 p-3 text-left ${
-									selectedSongId === song.id
-										? "neo-card"
-										: "neo-card-no-hover opacity-80 hover:opacity-100"
-								}`}
-								key={song.id}
-								onClick={onClose}
-								params={{ songId: String(song.id) }}
-								to="/song/$songId"
-							>
-								<div className="neo-border flex h-10 w-10 shrink-0 items-center justify-center bg-[var(--bg-accent)]">
-									<Play className="ml-1 h-5 w-5 text-[var(--text-on-accent)]" />
-								</div>
-								<div className="overflow-hidden">
-									<p className="truncate font-bold">{song.title}</p>
-									<p className="truncate text-xs neo-text-muted">
-										{song.artist}
-									</p>
-								</div>
-							</Link>
-						))}
+						{filteredSongs.length > 0 ? (
+							filteredSongs.map((song) => (
+								<Link
+									className={`flex w-full items-center gap-3 p-3 text-left ${
+										selectedSongId === song.id
+											? "neo-card"
+											: "neo-card-no-hover opacity-80 hover:opacity-100"
+									}`}
+									key={song.id}
+									onClick={onClose}
+									params={{ songId: String(song.id) }}
+									to="/song/$songId"
+								>
+									<div className="neo-border flex h-10 w-10 shrink-0 items-center justify-center bg-[var(--bg-accent)]">
+										<Play className="ml-1 h-5 w-5 text-[var(--text-on-accent)]" />
+									</div>
+									<div className="overflow-hidden">
+										<p className="truncate font-bold">{song.title}</p>
+										<p className="truncate text-xs neo-text-muted">
+											{song.artist}
+										</p>
+									</div>
+								</Link>
+							))
+						) : (
+							<div className="neo-card-no-hover break-words p-4 text-sm neo-text-muted">
+								{normalizedLibraryQuery
+									? `No library items match "${deferredLibraryQuery.trim()}".`
+									: "Your library is empty."}
+							</div>
+						)}
 					</div>
 				</div>
 				{scrollIndicator.hasOverflow ? (

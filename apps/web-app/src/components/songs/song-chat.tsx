@@ -3,9 +3,24 @@ import {
 	useQueryClient,
 	useSuspenseQuery,
 } from "@tanstack/react-query";
-import { ArrowLeft, MessageCircle, Plus, Send, Trash2, X } from "lucide-react";
+import {
+	ArrowLeft,
+	MessageCircle,
+	Plus,
+	Search,
+	Send,
+	Trash2,
+	X,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+	type FormEvent,
+	useDeferredValue,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 import type {
@@ -315,12 +330,35 @@ function ThreadList({
 	onSelect: (threadId: number) => void;
 	threads: SongChatThreadSummary[];
 }) {
+	const [threadQuery, setThreadQuery] = useState("");
+	const deferredThreadQuery = useDeferredValue(threadQuery);
+	const normalizedThreadQuery = deferredThreadQuery.trim().toLocaleLowerCase();
+	const filteredThreads = normalizedThreadQuery
+		? threads.filter((thread) =>
+				thread.title.toLocaleLowerCase().includes(normalizedThreadQuery),
+			)
+		: threads;
+
 	return (
 		<div className="flex h-full flex-col">
-			<div className="neo-border-b flex items-center justify-between px-4 py-3">
-				<h3 className="text-sm font-bold uppercase tracking-widest">Threads</h3>
+			<div className="neo-border-b flex items-center gap-2 px-4 py-3">
+				<div className="relative min-w-0 flex-1">
+					<Search
+						aria-hidden="true"
+						className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 neo-text-muted"
+					/>
+					<input
+						aria-label="Search threads"
+						className="neo-input neo-search-input h-8 w-full min-w-0 !py-1.5 !pr-3 !pl-8 text-xs"
+						onChange={(event) => setThreadQuery(event.target.value)}
+						placeholder="Search threads"
+						type="search"
+						value={threadQuery}
+					/>
+				</div>
 				<button
-					className="neo-button px-2 py-1 text-xs uppercase tracking-wider disabled:opacity-60"
+					aria-label="Add new thread"
+					className="neo-button flex h-8 w-8 shrink-0 items-center justify-center disabled:opacity-60"
 					disabled={isBusy || isDeleting}
 					onClick={onCreate}
 					type="button"
@@ -338,8 +376,12 @@ function ThreadList({
 					<p className="p-4 text-center font-mono text-sm neo-text-muted">
 						No threads yet
 					</p>
+				) : filteredThreads.length === 0 ? (
+					<p className="p-4 text-center font-mono text-sm neo-text-muted">
+						No matching threads
+					</p>
 				) : null}
-				{threads.map((thread) => (
+				{filteredThreads.map((thread) => (
 					<div
 						className="neo-border-b flex items-center gap-2 transition-colors hover:bg-[var(--bg-card-hover)]"
 						key={thread.id}

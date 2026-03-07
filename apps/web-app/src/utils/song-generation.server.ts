@@ -170,7 +170,7 @@ const FEW_SHOT_EXAMPLE_D = [
 	"Few-shot example D (split merged lyric blocks into natural lines):",
 	"Input fragments:",
 	String.raw`1. \[Verse 1\]`,
-	String.raw`2. [Koyoi mo zujou de wa kireina mangetsu ga kirakira Shiawase sou ni sekai wo terashiteiru Touno watashi wa dekisokonai de dou shiyou mo nakute Yoake yumemite wa jibeta haizurimawatteru](/example-link)`,
+	"2. [Koyoi mo zujou de wa kireina mangetsu ga kirakira Shiawase sou ni sekai wo terashiteiru Touno watashi wa dekisokonai de dou shiyou mo nakute Yoake yumemite wa jibeta haizurimawatteru](/example-link)",
 	"Expected tool payload:",
 	'set_lyrics_lines_state -> {"lyricsLines":["Koyoi mo zujou de wa kireina mangetsu ga kirakira","Shiawase sou ni sekai wo terashiteiru","Touno watashi wa dekisokonai de dou shiyou mo nakute","Yoake yumemite wa jibeta haizurimawatteru"]}',
 ] as const;

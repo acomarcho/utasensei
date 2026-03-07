@@ -1,4 +1,9 @@
 const MARKDOWN_NEW_ENDPOINT = "https://markdown.new/";
+const REFERENCE_SOURCE_URL =
+	"https://www.lyrical-nonsense.com/global/lyrics/sayuri/mikazuki/";
+const REFERENCE_SOURCE_TOKENS = 14888;
+const REFERENCE_SOURCE_MARKDOWN_CHARS = 52839;
+const MAX_MARKDOWN_SOURCE_TOKENS = REFERENCE_SOURCE_TOKENS * 2.5;
 
 type MarkdownNewSuccessResponse = {
 	success: true;
@@ -44,6 +49,33 @@ async function parseErrorMessage(response: Response): Promise<string> {
 	}
 }
 
+function estimateTokensFromMarkdown(markdown: string): number {
+	return Math.ceil(
+		(markdown.length * REFERENCE_SOURCE_TOKENS) /
+			REFERENCE_SOURCE_MARKDOWN_CHARS,
+	);
+}
+
+function assertTokenLimit(
+	tokens: number | null,
+	markdown: string,
+): number | null {
+	const effectiveTokens = tokens ?? estimateTokensFromMarkdown(markdown);
+
+	if (effectiveTokens <= MAX_MARKDOWN_SOURCE_TOKENS) {
+		return tokens;
+	}
+
+	const tokenSource = tokens === null ? "estimated" : "reported";
+
+	throw new Error(
+		[
+			`Song source is too large to process: markdown.new ${tokenSource} ${effectiveTokens.toLocaleString()} tokens.`,
+			`The current limit is ${MAX_MARKDOWN_SOURCE_TOKENS.toLocaleString()} tokens (${REFERENCE_SOURCE_TOKENS.toLocaleString()} tokens from ${REFERENCE_SOURCE_URL} x 2.5).`,
+		].join(" "),
+	);
+}
+
 export type MarkdownSource = {
 	sourceUrl: string;
 	title: string;
@@ -85,11 +117,16 @@ export async function fetchMarkdownSource(
 		throw new Error("markdown.new returned empty content.");
 	}
 
+	const tokens = assertTokenLimit(
+		typeof payload.tokens === "number" ? payload.tokens : null,
+		markdown,
+	);
+
 	return {
 		sourceUrl: payload.url?.trim() || normalizedUrl,
 		title: payload.title?.trim() || "",
 		markdown,
 		method: payload.method?.trim() || null,
-		tokens: typeof payload.tokens === "number" ? payload.tokens : null,
+		tokens,
 	};
 }

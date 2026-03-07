@@ -5,6 +5,7 @@ This repo is now a `pnpm` workspace with multiple apps.
 ## Apps
 
 - `apps/cli` — the original UtaSensei CLI
+- `apps/web-app` — the TanStack Start web app
 - `apps/ai-studio-prototype` — the Google AI Studio prototype app
 
 ## Requirements
@@ -52,6 +53,7 @@ pnpm studio
 pnpm typecheck
 pnpm build
 pnpm lint
+pnpm format
 ```
 
 ### Database commands
@@ -76,3 +78,7 @@ Core modules:
 - `apps/cli/src/commands/translate-song.ts`
 
 The CLI's local `.env` and SQLite database now live under `apps/cli/`.
+
+## Contributing
+
+See [AGENTS.md](./AGENTS.md) for the contributor guide. In short: use Node `22.x` with `pnpm`, prefer root workspace commands, keep filenames descriptive and kebab-case (for example `song-model-picker.tsx`), and use PascalCase for React component names inside those files.

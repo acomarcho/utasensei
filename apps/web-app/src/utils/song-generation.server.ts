@@ -128,7 +128,9 @@ const LYRICS_EXTRACTION_RULES = [
 	"- Remove section headers like [Verse], [Chorus], [Bridge], [Outro].",
 	"- Remove UI strings like Share, Embed, Contributors, About, Translations tabs.",
 	"- Keep repeated chorus lines if they appear in lyrics.",
-	"- Keep each lyric line as a single cleaned string.",
+	"- Keep each output item to one logical sung lyric line.",
+	"- If source markdown merges multiple lyric lines into one paragraph, bracket block, or link text, split them into separate lyric lines in singing order.",
+	"- Avoid paragraph-length lyric entries; split long merged text at natural lyric boundaries when the split still reads like actual sung lines.",
 	"- Keep romanized Japanese lines exactly as they appear (except trimming whitespace and numbering).",
 ] as const;
 
@@ -162,6 +164,15 @@ const FEW_SHOT_EXAMPLE_A = [
 	"Expected tool payloads:",
 	'set_song_metadata_state -> {"songMetadata":{"title":"Tower of Flower","artist":"Sayuri"}}',
 	'set_lyrics_lines_state -> {"lyricsLines":["Kimi ga motte kita manga","Kureta shiranai namae no ohana"]}',
+] as const;
+
+const FEW_SHOT_EXAMPLE_D = [
+	"Few-shot example D (split merged lyric blocks into natural lines):",
+	"Input fragments:",
+	String.raw`1. \[Verse 1\]`,
+	String.raw`2. [Koyoi mo zujou de wa kireina mangetsu ga kirakira Shiawase sou ni sekai wo terashiteiru Touno watashi wa dekisokonai de dou shiyou mo nakute Yoake yumemite wa jibeta haizurimawatteru](/example-link)`,
+	"Expected tool payload:",
+	'set_lyrics_lines_state -> {"lyricsLines":["Koyoi mo zujou de wa kireina mangetsu ga kirakira","Shiawase sou ni sekai wo terashiteiru","Touno watashi wa dekisokonai de dou shiyou mo nakute","Yoake yumemite wa jibeta haizurimawatteru"]}',
 ] as const;
 
 const FEW_SHOT_EXAMPLE_B = [
@@ -387,12 +398,75 @@ function buildMetadataAndLyricsPrompt(input: FetchSourceOutput): string {
 		"",
 		...FEW_SHOT_EXAMPLE_A,
 		"",
+		...FEW_SHOT_EXAMPLE_D,
+		"",
 		`Page URL: ${input.sourceUrl}`,
 		`Page title: ${input.title}`,
 		"",
 		"Source markdown:",
 		input.sourceMarkdown,
 	].join("\n");
+}
+
+type MetadataAndLyricsSourceInput = {
+	sourceUrl: string;
+	title: string;
+	sourceMarkdown: string;
+	method?: string | null;
+	tokens?: number | null;
+};
+
+async function extractMetadataAndLyricsFromSource(
+	input: MetadataAndLyricsSourceInput,
+	modelId: SongGenerationModelId,
+): Promise<MetadataAndLyricsOutput> {
+	const prompt = buildMetadataAndLyricsPrompt({
+		method: input.method ?? null,
+		sourceMarkdown: input.sourceMarkdown,
+		sourceUrl: input.sourceUrl,
+		title: input.title,
+		tokens: input.tokens ?? null,
+	});
+
+	logGenerationDebug("workflow_step_start", {
+		step: "extract_metadata_and_lyrics",
+		promptLength: prompt.length,
+		promptPreview: prompt.slice(0, 600),
+	});
+
+	const result = await generateText({
+		model: fireworks(modelId),
+		system: GENERATION_SYSTEM_PROMPT,
+		output: Output.object({
+			schema: z.object({
+				lyricsLines: z.array(z.string()),
+				songMetadata: songMetadataSchema,
+			}),
+			name: "song_metadata_and_lyrics",
+			description: "Song metadata and cleaned lyrics lines.",
+		}),
+		prompt,
+	});
+
+	const songMetadata = normalizeSongMetadata(result.output.songMetadata);
+	const lyricsLines = normalizeLyricsLines(result.output.lyricsLines);
+
+	logGenerationDebug("workflow_step_success", {
+		step: "extract_metadata_and_lyrics",
+		artist: songMetadata.artist,
+		lyricsLineCount: lyricsLines.length,
+		title: songMetadata.title,
+	});
+
+	return {
+		method: input.method ?? null,
+		lyricsLines,
+		songMetadata,
+		sourceMarkdown: input.sourceMarkdown,
+		sourceUrl: input.sourceUrl,
+		title: input.title,
+		tokens: input.tokens ?? null,
+	};
 }
 
 function buildTranslationsPrompt(input: MetadataAndLyricsOutput): string {
@@ -691,7 +765,6 @@ function createTranslateSongWorkflow(
 		outputSchema: metadataAndLyricsOutputSchema,
 		execute: async ({ getInitData, inputData }) => {
 			const { modelId } = getInitData<TranslateSongWorkflowInput>();
-			const prompt = buildMetadataAndLyricsPrompt(inputData);
 
 			await reportStatus(
 				onProgress,
@@ -699,41 +772,7 @@ function createTranslateSongWorkflow(
 				"Extracting lyrics...",
 			);
 
-			logGenerationDebug("workflow_step_start", {
-				step: "extract_metadata_and_lyrics",
-				promptLength: prompt.length,
-				promptPreview: prompt.slice(0, 600),
-			});
-
-			const result = await generateText({
-				model: fireworks(modelId),
-				system: GENERATION_SYSTEM_PROMPT,
-				output: Output.object({
-					schema: z.object({
-						lyricsLines: z.array(z.string()),
-						songMetadata: songMetadataSchema,
-					}),
-					name: "song_metadata_and_lyrics",
-					description: "Song metadata and cleaned lyrics lines.",
-				}),
-				prompt,
-			});
-
-			const songMetadata = normalizeSongMetadata(result.output.songMetadata);
-			const lyricsLines = normalizeLyricsLines(result.output.lyricsLines);
-
-			logGenerationDebug("workflow_step_success", {
-				step: "extract_metadata_and_lyrics",
-				artist: songMetadata.artist,
-				lyricsLineCount: lyricsLines.length,
-				title: songMetadata.title,
-			});
-
-			return {
-				...inputData,
-				lyricsLines,
-				songMetadata,
-			};
+			return extractMetadataAndLyricsFromSource(inputData, modelId);
 		},
 	});
 

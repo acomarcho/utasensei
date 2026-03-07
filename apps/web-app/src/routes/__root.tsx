@@ -1,15 +1,24 @@
 /// <reference types="vite/client" />
-import type { ReactNode } from "react";
-import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router";
+import { type QueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import {
+	createRootRouteWithContext,
+	HeadContent,
+	Scripts,
+} from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
+import type { ReactNode } from "react";
+import { AiStudioShell } from "~/components/ai-studio";
 import { DefaultCatchBoundary } from "~/components/DefaultCatchBoundary";
 import { NotFound } from "~/components/NotFound";
-import { AiStudioShell } from "~/components/ai-studio";
 import appCss from "~/styles/app.css?url";
-import { getSongsListFn } from "~/utils/songs.functions";
 import { seo } from "~/utils/seo";
+import { songsListQueryOptions } from "~/utils/songs.query-options";
 
-export const Route = createRootRoute({
+type RouterContext = {
+	queryClient: QueryClient;
+};
+
+export const Route = createRootRouteWithContext<RouterContext>()({
 	head: () => ({
 		meta: [
 			{ charSet: "utf-8" },
@@ -25,9 +34,8 @@ export const Route = createRootRoute({
 		],
 		links: [{ rel: "stylesheet", href: appCss }],
 	}),
-	loader: async () => {
-		const songsList = await getSongsListFn();
-		return { songsList };
+	loader: ({ context }) => {
+		return context.queryClient.ensureQueryData(songsListQueryOptions());
 	},
 	errorComponent: DefaultCatchBoundary,
 	notFoundComponent: () => <NotFound />,
@@ -50,7 +58,7 @@ function RootDocument({ children }: { children: ReactNode }) {
 }
 
 function RootComponent() {
-	const { songsList } = Route.useLoaderData();
+	const { data: songsList } = useSuspenseQuery(songsListQueryOptions());
 
 	return (
 		<RootDocument>

@@ -1,32 +1,22 @@
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { SongDetailPage } from "~/components/ai-studio";
-import { getSongPageDataFn } from "~/utils/songs.functions";
+import { songPageDataQueryOptions } from "~/utils/songs.query-options";
 
 export const Route = createFileRoute("/song/$songId")({
-	loader: async ({ params }) => {
+	loader: ({ context, params }) => {
 		const songId = Number(params.songId);
-
-		if (!Number.isInteger(songId) || songId <= 0) {
-			return {
-				chatThreads: [],
-				flashcardRun: null,
-				songLesson: null,
-			};
-		}
-
-		return getSongPageDataFn({ data: { songId } });
+		return context.queryClient.ensureQueryData(
+			songPageDataQueryOptions(songId),
+		);
 	},
 	component: SongRouteComponent,
 });
 
 function SongRouteComponent() {
-	const { chatThreads, flashcardRun, songLesson } = Route.useLoaderData();
+	const { songId } = Route.useParams();
+	const { data } = useSuspenseQuery(songPageDataQueryOptions(Number(songId)));
+	const { flashcardRun, songLesson } = data;
 
-	return (
-		<SongDetailPage
-			chatThreads={chatThreads}
-			flashcardRun={flashcardRun}
-			songLesson={songLesson}
-		/>
-	);
+	return <SongDetailPage flashcardRun={flashcardRun} songLesson={songLesson} />;
 }

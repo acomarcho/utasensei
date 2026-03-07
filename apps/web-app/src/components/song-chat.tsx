@@ -1,3 +1,8 @@
+import {
+	useMutation,
+	useQueryClient,
+	useSuspenseQuery,
+} from "@tanstack/react-query";
 import { ArrowLeft, MessageCircle, Plus, Send, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -7,14 +12,20 @@ import type {
 	SongChatRole,
 	SongChatThread,
 	SongChatThreadSummary,
+	SongPageData,
 } from "~/data/ai-studio";
 import {
 	deleteSongChatThreadFn,
 	sendSongChatMessageFn,
 } from "~/utils/songs.functions";
+import {
+	songPageDataQueryKey,
+	songPageDataQueryOptions,
+	updateSongPageData,
+} from "~/utils/songs.query-options";
 
 type LocalChatMessage = {
-	id: number | string;
+	id: number;
 	role: SongChatRole;
 	content: string;
 	createdAt: number;
@@ -91,7 +102,7 @@ function appendOptimisticExchange(
 
 function appendAssistantDelta(
 	thread: LocalResolvedThread,
-	assistantMessageId: string,
+	assistantMessageId: number,
 	textDelta: string,
 ): LocalResolvedThread {
 	return {
@@ -102,6 +113,26 @@ function appendAssistantDelta(
 				: message,
 		),
 	};
+}
+
+function upsertResolvedThread(
+	threads: SongChatThread[],
+	thread: LocalResolvedThread,
+) {
+	return [
+		...threads.filter((currentThread) => currentThread.id !== thread.id),
+		thread,
+	].sort((left, right) => {
+		if (left.updatedAt === right.updatedAt) {
+			return right.id - left.id;
+		}
+
+		return right.updatedAt - left.updatedAt;
+	});
+}
+
+function removeResolvedThread(threads: SongChatThread[], threadId: number) {
+	return threads.filter((thread) => thread.id !== threadId);
 }
 
 function buildDraftTitle(message: string) {
@@ -314,7 +345,7 @@ function ThreadList({
 						key={thread.id}
 					>
 						<button
-							className="flex-1 px-4 py-3 text-left disabled:cursor-not-allowed disabled:opacity-60"
+							className="min-w-0 flex-1 px-4 py-3 text-left disabled:cursor-not-allowed disabled:opacity-60"
 							disabled={isBusy || isDeleting}
 							onClick={() => onSelect(thread.id)}
 							type="button"
@@ -326,7 +357,7 @@ function ThreadList({
 						</button>
 						<button
 							aria-label={`Delete thread: ${thread.title}`}
-							className="mr-2 p-1.5 transition-colors hover:text-[var(--bg-danger)] disabled:cursor-not-allowed disabled:opacity-60"
+							className="mr-2 shrink-0 p-1.5 transition-colors hover:text-[var(--bg-danger)] disabled:cursor-not-allowed disabled:opacity-60"
 							disabled={isBusy || isDeleting}
 							onClick={() => onDelete(thread)}
 							type="button"
@@ -384,14 +415,14 @@ function Conversation({
 			<div className="neo-border-b flex items-center gap-2 px-3 py-3">
 				<button
 					aria-label="Back to threads"
-					className="p-1 transition-colors hover:text-[var(--bg-accent)] disabled:cursor-not-allowed disabled:opacity-60"
+					className="shrink-0 p-1 transition-colors hover:text-[var(--bg-accent)] disabled:cursor-not-allowed disabled:opacity-60"
 					disabled={isBusy}
 					onClick={onBack}
 					type="button"
 				>
 					<ArrowLeft className="h-4 w-4" />
 				</button>
-				<h3 className="flex-1 truncate text-sm font-bold uppercase tracking-widest">
+				<h3 className="min-w-0 flex-1 truncate text-sm font-bold uppercase tracking-widest">
 					{activeTitle}
 				</h3>
 			</div>
@@ -435,52 +466,272 @@ function Conversation({
 	);
 }
 
-export function SongChat({
-	initialThreads,
-	songId,
-}: {
-	initialThreads: SongChatThread[];
-	songId: number;
-}) {
+export function SongChat({ songId }: { songId: number }) {
+	const queryClient = useQueryClient();
+	const pageQueryKey = songPageDataQueryKey(songId);
+	const { data } = useSuspenseQuery(songPageDataQueryOptions(songId));
+	const initialThreads = data.chatThreads;
 	const [isOpen, setIsOpen] = useState(false);
-	const [threadOverrides, setThreadOverrides] = useState<
-		Record<number, LocalResolvedThread>
-	>({});
-	const [deletedThreadIds, setDeletedThreadIds] = useState<number[]>([]);
 	const [activeThreadId, setActiveThreadId] = useState<number | null>(null);
 	const [draftThread, setDraftThread] = useState<DraftChatThread | null>(null);
-	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [threadDeleteError, setThreadDeleteError] = useState<string | null>(
 		null,
 	);
 	const [threadToDelete, setThreadToDelete] =
 		useState<SongChatThreadSummary | null>(null);
-	const [isDeletingThread, setIsDeletingThread] = useState(false);
-	const serverThreadDetails = useMemo(
+	const threadDetails = useMemo(
 		() => toThreadDetailsRecord(initialThreads),
 		[initialThreads],
 	);
-	const deletedThreadIdSet = useMemo(
-		() => new Set(deletedThreadIds),
-		[deletedThreadIds],
-	);
-	const threadDetails = useMemo(() => {
-		const nextDetails: Record<number, LocalResolvedThread> = {
-			...serverThreadDetails,
-			...threadOverrides,
-		};
-
-		for (const threadId of deletedThreadIdSet) {
-			delete nextDetails[threadId];
-		}
-
-		return nextDetails;
-	}, [deletedThreadIdSet, serverThreadDetails, threadOverrides]);
 	const threads = useMemo(
 		() => sortThreads(Object.values(threadDetails).map(toThreadSummary)),
 		[threadDetails],
 	);
+
+	const deleteThreadMutation = useMutation<
+		number,
+		unknown,
+		SongChatThreadSummary,
+		{ previousActiveThreadId: number | null; previousPageData?: SongPageData }
+	>({
+		mutationFn: async (thread) => {
+			await deleteSongChatThreadFn({ data: { threadId: thread.id } });
+			return thread.id;
+		},
+		onMutate: async (thread) => {
+			setThreadDeleteError(null);
+			await queryClient.cancelQueries({ queryKey: pageQueryKey });
+
+			const previousPageData =
+				queryClient.getQueryData<SongPageData>(pageQueryKey);
+			const previousActiveThreadId = activeThreadId;
+
+			updateSongPageData(queryClient, songId, (currentPageData) => {
+				if (!currentPageData) {
+					return currentPageData;
+				}
+
+				return {
+					...currentPageData,
+					chatThreads: removeResolvedThread(
+						currentPageData.chatThreads,
+						thread.id,
+					),
+				};
+			});
+
+			if (previousActiveThreadId === thread.id) {
+				setActiveThreadId(null);
+			}
+
+			return { previousActiveThreadId, previousPageData };
+		},
+		onError: (error, _thread, context) => {
+			setThreadDeleteError(formatErrorMessage(error));
+			if (context?.previousPageData) {
+				queryClient.setQueryData(pageQueryKey, context.previousPageData);
+			}
+			if (context && context.previousActiveThreadId !== null) {
+				setActiveThreadId(context.previousActiveThreadId);
+			}
+		},
+		onSuccess: () => {
+			setThreadToDelete(null);
+		},
+	});
+
+	const sendMessageMutation = useMutation<
+		SongChatThread,
+		unknown,
+		{
+			assistantMessage: LocalChatMessage;
+			assistantMessageId: number;
+			isDraftMessage: boolean;
+			message: string;
+			previousActiveThread: LocalResolvedThread | null;
+			previousActiveThreadId: number | null;
+			previousDraftThread: DraftChatThread | null;
+			userMessage: LocalChatMessage;
+		},
+		{
+			previousPageData?: SongPageData;
+			previousDraftThread: DraftChatThread | null;
+		}
+	>({
+		mutationFn: async (variables) => {
+			let resolvedThread: SongChatThread | null = null;
+			const stream = await sendSongChatMessageFn({
+				data: {
+					songId,
+					message: variables.message,
+					threadId: variables.isDraftMessage
+						? undefined
+						: (variables.previousActiveThreadId ?? undefined),
+				},
+			});
+
+			for await (const event of stream) {
+				if (event.type === "text-delta") {
+					if (variables.isDraftMessage) {
+						setDraftThread((currentDraft) => {
+							if (!currentDraft) {
+								return currentDraft;
+							}
+
+							return {
+								...currentDraft,
+								messages: currentDraft.messages.map((currentMessage) =>
+									currentMessage.id === variables.assistantMessageId
+										? {
+												...currentMessage,
+												content: `${currentMessage.content}${event.textDelta}`,
+											}
+										: currentMessage,
+								),
+							};
+						});
+					} else if (
+						variables.previousActiveThreadId !== null &&
+						variables.previousActiveThread
+					) {
+						updateSongPageData(queryClient, songId, (currentPageData) => {
+							if (!currentPageData) {
+								return currentPageData;
+							}
+
+							const fallbackThread = variables.previousActiveThread;
+							if (!fallbackThread) {
+								return currentPageData;
+							}
+
+							const currentThread =
+								currentPageData.chatThreads.find(
+									(thread) => thread.id === variables.previousActiveThreadId,
+								) ?? fallbackThread;
+
+							return {
+								...currentPageData,
+								chatThreads: upsertResolvedThread(
+									currentPageData.chatThreads,
+									appendAssistantDelta(
+										currentThread,
+										variables.assistantMessageId,
+										event.textDelta,
+									),
+								),
+							};
+						});
+					}
+
+					continue;
+				}
+
+				resolvedThread = event.thread;
+			}
+
+			if (!resolvedThread) {
+				throw new Error("Failed to load the final chat thread state.");
+			}
+
+			return resolvedThread;
+		},
+		onMutate: async (variables) => {
+			setErrorMessage(null);
+
+			if (variables.isDraftMessage) {
+				setDraftThread((currentDraft) => {
+					if (!currentDraft) {
+						return currentDraft;
+					}
+
+					return {
+						...currentDraft,
+						title:
+							currentDraft.messages.length === 0
+								? buildDraftTitle(variables.message)
+								: currentDraft.title,
+						messages: [
+							...currentDraft.messages,
+							variables.userMessage,
+							variables.assistantMessage,
+						],
+					};
+				});
+
+				return { previousDraftThread: variables.previousDraftThread };
+			}
+
+			await queryClient.cancelQueries({ queryKey: pageQueryKey });
+			const previousPageData =
+				queryClient.getQueryData<SongPageData>(pageQueryKey);
+
+			if (
+				variables.previousActiveThreadId !== null &&
+				variables.previousActiveThread
+			) {
+				updateSongPageData(queryClient, songId, (currentPageData) => {
+					if (!currentPageData) {
+						return currentPageData;
+					}
+
+					const fallbackThread = variables.previousActiveThread;
+					if (!fallbackThread) {
+						return currentPageData;
+					}
+
+					return {
+						...currentPageData,
+						chatThreads: upsertResolvedThread(
+							currentPageData.chatThreads,
+							appendOptimisticExchange(
+								fallbackThread,
+								variables.userMessage,
+								variables.assistantMessage,
+							),
+						),
+					};
+				});
+			}
+
+			return {
+				previousDraftThread: variables.previousDraftThread,
+				previousPageData,
+			};
+		},
+		onError: (error, variables, context) => {
+			setErrorMessage(formatErrorMessage(error));
+
+			if (variables.isDraftMessage) {
+				setDraftThread(
+					context?.previousDraftThread ?? variables.previousDraftThread,
+				);
+				return;
+			}
+
+			if (context?.previousPageData) {
+				queryClient.setQueryData(pageQueryKey, context.previousPageData);
+			}
+		},
+		onSuccess: (resolvedThread) => {
+			updateSongPageData(queryClient, songId, (currentPageData) => {
+				if (!currentPageData) {
+					return currentPageData;
+				}
+
+				return {
+					...currentPageData,
+					chatThreads: upsertResolvedThread(
+						currentPageData.chatThreads,
+						resolvedThread,
+					),
+				};
+			});
+
+			setActiveThreadId(resolvedThread.id);
+			setDraftThread(null);
+		},
+	});
 
 	useEffect(() => {
 		if (!isOpen && !threadToDelete) {
@@ -513,6 +764,8 @@ export function SongChat({
 			? (threadDetails[activeThreadId]?.title ?? "Thread")
 			: "Song Assistant");
 
+	const isDeletingThread = deleteThreadMutation.isPending;
+	const isSubmitting = sendMessageMutation.isPending;
 	const isBusy = isSubmitting;
 
 	function openDraftThread() {
@@ -552,35 +805,10 @@ export function SongChat({
 			return;
 		}
 
-		setThreadDeleteError(null);
-		setIsDeletingThread(true);
-
 		try {
-			await deleteSongChatThreadFn({ data: { threadId: threadToDelete.id } });
-			setDeletedThreadIds((currentIds) => {
-				if (currentIds.includes(threadToDelete.id)) {
-					return currentIds;
-				}
-
-				return [...currentIds, threadToDelete.id];
-			});
-			setThreadOverrides((currentOverrides) => {
-				if (!(threadToDelete.id in currentOverrides)) {
-					return currentOverrides;
-				}
-
-				const nextOverrides = { ...currentOverrides };
-				delete nextOverrides[threadToDelete.id];
-				return nextOverrides;
-			});
-			if (activeThreadId === threadToDelete.id) {
-				setActiveThreadId(null);
-			}
-			setThreadToDelete(null);
+			await deleteThreadMutation.mutateAsync(threadToDelete);
 		} catch (error) {
 			setThreadDeleteError(formatErrorMessage(error));
-		} finally {
-			setIsDeletingThread(false);
 		}
 	}
 
@@ -591,12 +819,12 @@ export function SongChat({
 
 		const timestamp = Date.now();
 		const userMessage: LocalChatMessage = {
-			id: `temp-user-${timestamp}`,
+			id: -timestamp,
 			role: "user",
 			content: message,
 			createdAt: timestamp,
 		};
-		const assistantMessageId = `temp-assistant-${timestamp}`;
+		const assistantMessageId = -(timestamp + 1);
 		const assistantMessage: LocalChatMessage = {
 			id: assistantMessageId,
 			role: "assistant",
@@ -619,115 +847,19 @@ export function SongChat({
 			return;
 		}
 
-		setErrorMessage(null);
-		setIsSubmitting(true);
-
-		if (isDraftMessage) {
-			setDraftThread((currentDraft) => {
-				if (!currentDraft) {
-					return currentDraft;
-				}
-
-				return {
-					...currentDraft,
-					title:
-						currentDraft.messages.length === 0
-							? buildDraftTitle(message)
-							: currentDraft.title,
-					messages: [...currentDraft.messages, userMessage, assistantMessage],
-				};
-			});
-		} else if (previousActiveThreadId !== null && previousActiveThread) {
-			setThreadOverrides((currentOverrides) => ({
-				...currentOverrides,
-				[previousActiveThreadId]: appendOptimisticExchange(
-					previousActiveThread,
-					userMessage,
-					assistantMessage,
-				),
-			}));
-		}
-
 		try {
-			let resolvedThread: SongChatThread | null = null;
-			const stream = await sendSongChatMessageFn({
-				data: {
-					songId,
-					message,
-					threadId: isDraftMessage
-						? undefined
-						: (previousActiveThreadId ?? undefined),
-				},
+			await sendMessageMutation.mutateAsync({
+				assistantMessage,
+				assistantMessageId,
+				isDraftMessage,
+				message,
+				previousActiveThread,
+				previousActiveThreadId,
+				previousDraftThread,
+				userMessage,
 			});
-
-			for await (const event of stream) {
-				if (event.type === "text-delta") {
-					if (isDraftMessage) {
-						setDraftThread((currentDraft) => {
-							if (!currentDraft) {
-								return currentDraft;
-							}
-
-							return {
-								...currentDraft,
-								messages: currentDraft.messages.map((currentMessage) =>
-									currentMessage.id === assistantMessageId
-										? {
-												...currentMessage,
-												content: `${currentMessage.content}${event.textDelta}`,
-											}
-										: currentMessage,
-								),
-							};
-						});
-					} else if (previousActiveThreadId !== null && previousActiveThread) {
-						setThreadOverrides((currentOverrides) => {
-							const currentThread =
-								currentOverrides[previousActiveThreadId] ??
-								previousActiveThread;
-
-							return {
-								...currentOverrides,
-								[previousActiveThreadId]: appendAssistantDelta(
-									currentThread,
-									assistantMessageId,
-									event.textDelta,
-								),
-							};
-						});
-					}
-
-					continue;
-				}
-
-				resolvedThread = event.thread;
-			}
-
-			if (!resolvedThread) {
-				throw new Error("Failed to load the final chat thread state.");
-			}
-
-			setDeletedThreadIds((currentIds) =>
-				currentIds.filter((threadId) => threadId !== resolvedThread.id),
-			);
-			setThreadOverrides((currentOverrides) => ({
-				...currentOverrides,
-				[resolvedThread.id]: resolvedThread,
-			}));
-			setActiveThreadId(resolvedThread.id);
-			setDraftThread(null);
 		} catch (error) {
 			setErrorMessage(formatErrorMessage(error));
-			if (isDraftMessage) {
-				setDraftThread(previousDraftThread);
-			} else if (previousActiveThreadId !== null && previousActiveThread) {
-				setThreadOverrides((currentOverrides) => ({
-					...currentOverrides,
-					[previousActiveThreadId]: previousActiveThread,
-				}));
-			}
-		} finally {
-			setIsSubmitting(false);
 		}
 	}
 

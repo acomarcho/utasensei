@@ -1,10 +1,5 @@
-import {
-	Link,
-	Outlet,
-	useLocation,
-	useNavigate,
-	useRouter,
-} from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import {
 	ArrowRight,
 	BookOpen,
@@ -38,7 +33,6 @@ import { SongChat } from "~/components/song-chat";
 import type {
 	Flashcard,
 	FlashcardRun,
-	SongChatThread,
 	SongLesson,
 	SongListItem,
 } from "~/data/ai-studio";
@@ -48,6 +42,10 @@ import {
 	type SongGenerationModelId,
 } from "~/utils/song-generation-models";
 import { deleteSongFn } from "~/utils/songs.functions";
+import {
+	songPageDataQueryKey,
+	songsListQueryKey,
+} from "~/utils/songs.query-options";
 
 const REVIEW_STACK_LIMIT = 5;
 const REVIEW_SWIPE_MS = 280;
@@ -1084,7 +1082,7 @@ export function NewSongPage() {
 	const [generationError, setGenerationError] = useState<string | null>(null);
 	const generationSourceRef = useRef<EventSource | null>(null);
 	const navigate = useNavigate();
-	const router = useRouter();
+	const queryClient = useQueryClient();
 
 	const handleGenerate = useCallback(async () => {
 		const nextUrl = urlInput.trim();
@@ -1148,7 +1146,9 @@ export function NewSongPage() {
 						params: { songId: String(payload.songId) },
 						to: "/song/$songId",
 					});
-					await router.invalidate();
+					await queryClient.invalidateQueries({
+						queryKey: songsListQueryKey,
+					});
 					finish();
 				});
 
@@ -1179,7 +1179,7 @@ export function NewSongPage() {
 			);
 			setIsGenerating(false);
 		}
-	}, [isGenerating, navigate, router, selectedModelId, urlInput]);
+	}, [isGenerating, navigate, queryClient, selectedModelId, urlInput]);
 
 	useEffect(() => {
 		return () => {
@@ -1401,12 +1401,10 @@ function DeleteSongModal({
 }
 
 export function SongDetailPage({
-	chatThreads,
 	flashcardRun,
 	showChatWidget = true,
 	songLesson,
 }: {
-	chatThreads: SongChatThread[];
 	flashcardRun: FlashcardRun | null;
 	showChatWidget?: boolean;
 	songLesson: SongLesson | null;
@@ -1431,7 +1429,7 @@ export function SongDetailPage({
 	);
 	const reviewTimeoutRef = useRef<number | null>(null);
 	const navigate = useNavigate();
-	const router = useRouter();
+	const queryClient = useQueryClient();
 	const sourceLabel = useMemo(
 		() => formatSourceLabel(songLesson?.run.sourceUrl ?? ""),
 		[songLesson?.run.sourceUrl],
@@ -1560,8 +1558,11 @@ export function SongDetailPage({
 
 		try {
 			await deleteSongFn({ data: { songId: songLesson.song.id } });
+			queryClient.removeQueries({
+				queryKey: songPageDataQueryKey(songLesson.song.id),
+			});
+			await queryClient.invalidateQueries({ queryKey: songsListQueryKey });
 			await navigate({ to: "/" });
-			await router.invalidate();
 		} catch (error) {
 			setDeleteError(
 				error instanceof Error
@@ -1732,11 +1733,7 @@ export function SongDetailPage({
 				songTitle={songLesson.song.title}
 			/>
 			{showChatWidget ? (
-				<SongChat
-					initialThreads={chatThreads}
-					key={songLesson.song.id}
-					songId={songLesson.song.id}
-				/>
+				<SongChat key={songLesson.song.id} songId={songLesson.song.id} />
 			) : null}
 		</>
 	);

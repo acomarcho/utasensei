@@ -1,3 +1,4 @@
+import { useQueryErrorResetBoundary } from "@tanstack/react-query";
 import type { ErrorComponentProps } from "@tanstack/react-router";
 import {
 	ErrorComponent,
@@ -8,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 
 export function DefaultCatchBoundary({ error }: ErrorComponentProps) {
+	const { reset } = useQueryErrorResetBoundary();
 	const router = useRouter();
 	const isRoot = useMatch({
 		strict: false,
@@ -23,6 +25,7 @@ export function DefaultCatchBoundary({ error }: ErrorComponentProps) {
 				<button
 					className="rounded-sm bg-gray-600 px-2 py-1 font-extrabold text-white uppercase dark:bg-gray-700"
 					onClick={() => {
+						reset();
 						router.invalidate();
 					}}
 					type="button"
